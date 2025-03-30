@@ -1,0 +1,119 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_HUB_CREDS = credentials('dockerhub')
+        AWS_CREDS = credentials('aws-credentials')
+        EC2_IP = credentials('ec2-ip')
+        SSH_KEY = credentials('ec2-ssh-key')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Determine Changes') {
+            steps {
+                script {
+                    // Get list of changed files
+                    def changedFiles = sh(script: 'git diff --name-only HEAD^ HEAD || git diff --name-only', returnStdout: true).trim()
+                    
+                    // Determine what needs to be run
+                    env.RUN_TERRAFORM = changedFiles.contains('terraform/') ? 'true' : 'false'
+                    env.RUN_ANSIBLE = changedFiles.contains('ansible/') ? 'true' : 'false'
+                    env.RUN_APP = changedFiles.contains('frontend/') || changedFiles.contains('Backend/') || 
+                                 !changedFiles.contains('terraform/') && !changedFiles.contains('ansible/') ? 'true' : 'false'
+                }
+                echo "Run Terraform: ${env.RUN_TERRAFORM}"
+                echo "Run Ansible: ${env.RUN_ANSIBLE}"
+                echo "Run App Deployment: ${env.RUN_APP}"
+            }
+        }
+
+        stage('Infrastructure Provisioning') {
+            when {
+                expression { return env.RUN_TERRAFORM == 'true' }
+            }
+            steps {
+                dir('terraform') {
+                    sh 'terraform init'
+                    sh 'terraform plan'
+                    sh 'terraform apply -auto-approve'
+                    script {
+                        // Extract the new EC2 IP if it's created
+                        def newIp = sh(script: 'terraform output ec2_public_ip', returnStdout: true).trim()
+                        if (newIp) {
+                            // Update the stored EC2 IP credential
+                            // This is simplified; you'd need a more robust approach
+                            echo "New EC2 IP: ${newIp}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build Images') {
+            when {
+                expression { return env.RUN_APP == 'true' }
+            }
+            steps {
+                sh 'docker build -t ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest ./frontend'
+                sh 'docker build -t ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest ./Backend'
+            }
+        }
+
+        stage('Push Images') {
+            when {
+                expression { return env.RUN_APP == 'true' }
+            }
+            steps {
+                sh 'echo ${DOCKER_HUB_CREDS_PSW} | docker login -u ${DOCKER_HUB_CREDS_USR} --password-stdin'
+                sh 'docker push ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest'
+                sh 'docker push ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest'
+            }
+        }
+
+        stage('Configure Server') {
+            when {
+                expression { return env.RUN_ANSIBLE == 'true' }
+            }
+            steps {
+                dir('ansible') {
+                    sh 'ansible-playbook -i inventory.ini playbook.yml -e "ec2_ip=${EC2_IP}" --private-key=${SSH_KEY}'
+                }
+            }
+        }
+        
+        stage('Deploy to EC2') {
+            when {
+                expression { return env.RUN_APP == 'true' }
+            }
+            steps {
+                sshagent(['ec2-ssh-key']) {
+                    sh """
+                        scp docker-compose.prod.yml ubuntu@${EC2_IP}:/home/ubuntu/
+                        ssh ubuntu@${EC2_IP} 'docker-compose -f docker-compose.prod.yml down || true'
+                        ssh ubuntu@${EC2_IP} 'docker pull ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest'
+                        ssh ubuntu@${EC2_IP} 'docker pull ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest'
+                        ssh ubuntu@${EC2_IP} 'docker-compose -f docker-compose.prod.yml up -d'
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Pipeline executed successfully!'
+        }
+        failure {
+            echo 'Pipeline execution failed!'
+        }
+        always {
+            sh 'docker logout'
+        }
+    }
+}
