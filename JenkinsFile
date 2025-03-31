@@ -3,29 +3,23 @@ pipeline {
     
     environment {
         DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
-        EC2_SSH_KEY = credentials('ec2-ssh-key')
         EC2_IP = '44.201.228.69'
-        GIT_BRANCH = 'main'  // Set your target branch here
+        GIT_BRANCH = 'main'
     }
     
     triggers {
-        // Poll SCM every 5 minutes for changes
         pollSCM('H/5 * * * *')
     }
     
     stages {
         stage('Checkout') {
             steps {
-                // Checkout the specific branch
                 checkout([
                     $class: 'GitSCM',
                     branches: [[name: "*/${GIT_BRANCH}"]],
-                    doGenerateSubmoduleConfigurations: false,
-                    extensions: [],
-                    submoduleCfg: [],
                     userRemoteConfigs: [[
-                        credentialsId: 'github-credentials',  // Add your GitHub credentials in Jenkins
-                        url: 'https://github.com/kasun020/recipe-app.git'  // Replace with your repo URL
+                        credentialsId: 'github-credentials',
+                        url: 'https://github.com/kasun020/recipe-app.git'
                     ]]
                 ])
             }
@@ -33,72 +27,80 @@ pipeline {
         
         stage('Build Images') {
             steps {
-                // Build the Docker images with a unique tag (build number)
-                sh 'docker build -t ${DOCKER_HUB_CREDS_USR}/recipe-backend:${BUILD_NUMBER} ./Backend'
-                sh 'docker build -t ${DOCKER_HUB_CREDS_USR}/recipe-frontend:${BUILD_NUMBER} ./frontend'
-                
-                // Also tag as latest
-                sh 'docker tag ${DOCKER_HUB_CREDS_USR}/recipe-backend:${BUILD_NUMBER} ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest'
-                sh 'docker tag ${DOCKER_HUB_CREDS_USR}/recipe-frontend:${BUILD_NUMBER} ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest'
+                bat """
+                    docker build -t %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% ./Backend
+                    docker build -t %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% ./frontend
+                    docker tag %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
+                    docker tag %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
+                """
             }
         }
         
         stage('Push Images') {
             steps {
-                // Login to Docker Hub
-                sh 'echo ${DOCKER_HUB_CREDS_PSW} | docker login -u ${DOCKER_HUB_CREDS_USR} --password-stdin'
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-hub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PWD'
+                )]) {
+                    bat "docker login -u %DOCKER_USER% -p %DOCKER_PWD%"
+                }
                 
-                // Push both version-tagged and latest images
-                sh 'docker push ${DOCKER_HUB_CREDS_USR}/recipe-backend:${BUILD_NUMBER}'
-                sh 'docker push ${DOCKER_HUB_CREDS_USR}/recipe-frontend:${BUILD_NUMBER}'
-                sh 'docker push ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest'
-                sh 'docker push ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest'
+                bat """
+                    docker push %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER%
+                    docker push %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER%
+                    docker push %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
+                    docker push %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
+                """
             }
         }
         
         stage('Deploy to EC2') {
             steps {
-                // Create docker-compose.yml file for deployment
-                sh '''
-                cat > docker-compose.yml << EOF
-version: '3'
-
-services:
-  frontend:
-    image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    restart: always
-
-  backend:
-    image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
-    ports:
-      - "5000:5000"
-    env_file:
-      - ./Backend/.env
-    restart: always
-EOF
-                '''
+                script {
+                    writeFile(
+                        file: 'docker-compose.yml',
+                        text: """
+                        version: '3'
+                        services:
+                          frontend:
+                            image: ${env.DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
+                            ports:
+                              - "80:80"
+                            depends_on:
+                              - backend
+                            restart: always
+                          backend:
+                            image: ${env.DOCKER_HUB_CREDS_USR}/recipe-backend:latest
+                            ports:
+                              - "5000:5000"
+                            env_file:
+                              - ./Backend/.env
+                            restart: always
+                        """
+                    )
+                }
                 
-                // Copy docker-compose file to EC2 and deploy
-                withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'KEY_FILE')]) {
-                    sh '''
-                    scp -i $KEY_FILE -o StrictHostKeyChecking=no docker-compose.yml ubuntu@${EC2_IP}:/home/ubuntu/recipe-app/
-                    ssh -i $KEY_FILE -o StrictHostKeyChecking=no ubuntu@${EC2_IP} "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
-                    '''
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: 'ec2-ssh-key',
+                    keyFileVariable: 'SSH_KEY'
+                )]) {
+                    bat """
+                        scp -i "%SSH_KEY%" -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                        ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose down && docker-compose up -d"
+                    """
                 }
             }
         }
         
         stage('Cleanup') {
             steps {
-                // Remove local Docker images to save space
-                sh 'docker rmi ${DOCKER_HUB_CREDS_USR}/recipe-backend:${BUILD_NUMBER} || true'
-                sh 'docker rmi ${DOCKER_HUB_CREDS_USR}/recipe-frontend:${BUILD_NUMBER} || true'
-                sh 'docker rmi ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest || true'
-                sh 'docker rmi ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest || true'
+                bat """
+                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% || echo "Image not found"
+                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% || echo "Image not found"
+                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:latest || echo "Image not found"
+                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest || echo "Image not found"
+                """
             }
         }
     }
