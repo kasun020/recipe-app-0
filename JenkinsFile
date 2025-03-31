@@ -63,36 +63,47 @@ pipeline {
                         text: """
                         version: '3'
                         services:
-                          frontend:
+                        frontend:
                             image: ${env.DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
                             ports:
-                              - "80:80"
+                            - "80:80"
                             depends_on:
-                              - backend
+                            - backend
                             restart: always
-                          backend:
+                        backend:
                             image: ${env.DOCKER_HUB_CREDS_USR}/recipe-backend:latest
                             ports:
-                              - "5000:5000"
+                            - "5000:5000"
                             env_file:
-                              - ./Backend/.env
+                            - ./Backend/.env
                             restart: always
                         """
                     )
                 }
                 
                 withCredentials([sshUserPrivateKey(
-                    credentialsId: 'ec2-ssh-key',
-                    keyFileVariable: 'SSH_KEY'
+                credentialsId: 'ec2-ssh-key',
+                keyFileVariable: 'SSH_KEY'
                 )]) {
-                    bat """
-                        scp -i "%SSH_KEY%" -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
-                        ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose down && docker-compose up -d"
-                    """
+                bat """
+                    icacls "%SSH_KEY%" /inheritance:r /grant:r "%USERNAME%":"(F)"
+                    scp -i "%SSH_KEY%" -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                    ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose down && docker-compose up -d"
+                """
                 }
             }
         }
-        
+
+        stage('Run Tests') {
+            steps {
+                script {
+                    def testResult = bat(script: 'docker-compose -f docker-compose.yml run frontend npm test', returnStatus: true)
+                    if (testResult != 0) {
+                        error("Tests failed!")
+                    }
+                }
+            }
+        }        
         stage('Cleanup') {
             steps {
                 bat """
