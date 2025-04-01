@@ -42,16 +42,14 @@ pipeline {
                     credentialsId: 'docker-hub-credentials',
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PWD'
-                )]) {
-                    bat "docker login -u %DOCKER_USER% -p %DOCKER_PWD%"
+        )]) {
+            bat "docker login -u %DOCKER_USER% -p %DOCKER_PWD%"
+            
+            bat """
+                docker push %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
+                docker push %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
+            """
                 }
-                
-                bat """
-                    docker push %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER%
-                    docker push %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER%
-                    docker push %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
-                    docker push %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
-                """
             }
         }
         
