@@ -103,7 +103,9 @@ pipeline {
                     }
                 }
             }
-        }
+        }   
+                
+                
 
         stage('Run Tests') {
             steps {
@@ -115,6 +117,7 @@ pipeline {
                 }
             }
         }        
+        
         stage('Cleanup') {
             steps {
                 bat """
