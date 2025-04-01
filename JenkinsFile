@@ -53,34 +53,35 @@ pipeline {
             }
         }
         
-        
+
         stage('Deploy to EC2') {
             steps {
                 script {
-                    // Create docker-compose.yml
-                    writeFile(file: 'docker-compose.yml', text: "...")
-                    
-                    // Create temporary key file with PowerShell
-                    withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')]) {
-                        powershell """
-                            \$keyContent = Get-Content "${env.SSH_KEY}"
-                            Set-Content -Path "temp_key.pem" -Value \$keyContent
-                            \$acl = Get-Acl "temp_key.pem"
-                            \$acl.SetAccessRuleProtection(\$true, \$false)
-                            \$owner = New-Object System.Security.Principal.NTAccount("${env.USERNAME}")
-                            \$acl.SetOwner(\$owner)
-                            \$accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("\${env.USERNAME}","FullControl","Allow")
-                            \$acl.AddAccessRule(\$accessRule)
-                            Set-Acl "temp_key.pem" \$acl
-                            
-                            # Run SSH commands
-                            scp -i temp_key.pem -o StrictHostKeyChecking=no docker-compose.yml ubuntu@${env.EC2_IP}:/home/ubuntu/recipe-app/
-                            ssh -i temp_key.pem -o StrictHostKeyChecking=no ubuntu@${env.EC2_IP} "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose down && docker-compose up -d"
-                            
-                            # Clean up
-                            Remove-Item temp_key.pem
-                        """
-                    }
+                    writeFile(file: 'docker-compose.yml', text: """version: '3'
+        services:
+        frontend:
+            image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
+            ports:
+            - "80:80"
+            depends_on:
+            - backend
+            restart: always
+
+        backend:
+            image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
+            ports:
+            - "5000:5000"
+            env_file:
+            - ./Backend/.env
+            restart: always
+        """)
+                }
+                
+                sshagent(['ec2-ssh-key']) {
+                    bat """
+                        scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                        ssh -o StrictHostKeyChecking=no ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose down && docker-compose up -d"
+                    """
                 }
             }
         }
