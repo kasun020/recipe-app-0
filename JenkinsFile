@@ -57,6 +57,7 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
+                    // Fix indentation in docker-compose.yml
                     writeFile(file: 'docker-compose.yml', text: """version: '3'
         services:
         frontend:
@@ -75,17 +76,34 @@ pipeline {
             - ./Backend/.env
             restart: always
         """)
+                    echo "Docker compose file created successfully"
                 }
                 
+                // Add a test stage to verify SSH credentials
+                stage('Test SSH Connection') {
+                    steps {
+                        sshagent(['ec2-ssh-key']) {
+                            bat "ssh -o StrictHostKeyChecking=no -v ubuntu@%EC2_IP% \"echo SSH CONNECTION SUCCESSFUL\""
+                        }
+                    }
+                }
+                
+                // Original deployment with better error handling
                 sshagent(['ec2-ssh-key']) {
-                    bat """
-                        scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
-                        ssh -o StrictHostKeyChecking=no ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose down && docker-compose up -d"
-                    """
+                    script {
+                        def scpStatus = bat(script: "scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/", returnStatus: true)
+                        if (scpStatus != 0) {
+                            error("SCP file transfer failed with status code ${scpStatus}")
+                        }
+                        
+                        def sshStatus = bat(script: "ssh -o StrictHostKeyChecking=no ubuntu@%EC2_IP% \"cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose down && docker-compose up -d\"", returnStatus: true)
+                        if (sshStatus != 0) {
+                            error("SSH deployment command failed with status code ${sshStatus}")
+                        }
+                    }
                 }
             }
         }
-
 
         stage('Run Tests') {
             steps {
