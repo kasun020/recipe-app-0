@@ -62,7 +62,7 @@ pipeline {
 
         stage('Setup SSH Key') {
             steps {
-                withCredentials([file(credentialsId: 'ec2-ssh-key', variable: 'SSH_KEY_PATH')]) {
+                withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
                     // Copy the key
                     bat 'copy %SSH_KEY_PATH% id_rsa.ppk'
                 }
