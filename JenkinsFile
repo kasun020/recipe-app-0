@@ -74,9 +74,7 @@ pipeline {
             steps {
                 retry(count: env.SSH_RETRIES.toInteger()) {
                     bat """
-                        ssh -v -o StrictHostKeyChecking=no -i test-key.pem -o ConnectTimeout=30 ubuntu@%EC2_IP% "
-                            echo 'SSH connection validated'
-                        " || exit 1
+                        ssh -o StrictHostKeyChecking=no -i test-key.pem -o ConnectTimeout=30 ubuntu@%EC2_IP% echo "SSH connection validated" || exit 1
                     """
                 }
             }
