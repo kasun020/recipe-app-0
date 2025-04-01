@@ -66,7 +66,16 @@ pipeline {
             }
         }
         
-
+        stage('Verify Credential') {
+            steps {
+                script {
+                    withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
+                        bat 'echo Credential exists: %SSH_KEY_PATH%'
+                        bat 'dir %SSH_KEY_PATH%'
+                    }
+                }
+            }
+        }
 
         stage('Setup SSH Key') {
             steps {
@@ -92,23 +101,23 @@ pipeline {
                 script {
                     // First create a local docker-compose file
                     writeFile file: 'docker-compose.yml', text: """version: '3'
-        services:
-        frontend:
-            image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
-            ports:
-            - "80:80"
-            depends_on:
-            - backend
-            restart: unless-stopped
+                    services:
+                    frontend:
+                        image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
+                        ports:
+                        - "80:80"
+                        depends_on:
+                        - backend
+                        restart: unless-stopped
 
-        backend:
-            image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
-            ports:
-            - "5000:5000"
-            env_file:
-            - ./Backend/.env
-            restart: unless-stopped
-        """
+                    backend:
+                        image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
+                        ports:
+                        - "5000:5000"
+                        env_file:
+                        - ./Backend/.env
+                        restart: unless-stopped
+                    """
                     // Copy docker-compose to remote server
                     bat "pscp -i id_rsa.ppk docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/"
                     
@@ -137,11 +146,10 @@ pipeline {
                 bat """
                     docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% 2> nul || echo.
                     docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% 2> nul || echo.
-                    del /q test-key.pem 2> nul
+                    del /q id_rsa.ppk 2> nul
                 """
             }
         }
-    }
     
     post {
         success {
