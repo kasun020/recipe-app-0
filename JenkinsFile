@@ -59,13 +59,12 @@ pipeline {
             }
         }
 
+
         stage('Setup SSH Key') {
             steps {
                 withCredentials([file(credentialsId: 'ec2-ssh-key', variable: 'SSH_KEY_PATH')]) {
-                    // Simplified approach for Windows
-                    bat 'copy %SSH_KEY_PATH% test-key.pem'
-                    // Use simpler permission setting for Windows
-                    bat 'icacls test-key.pem /inheritance:r /grant:r "%USERNAME%:(R)"'
+                    // Copy the key
+                    bat 'copy %SSH_KEY_PATH% id_rsa.ppk'
                 }
             }
         }
@@ -74,12 +73,11 @@ pipeline {
             steps {
                 retry(count: env.SSH_RETRIES.toInteger()) {
                     bat """
-                        ssh -o StrictHostKeyChecking=no -i test-key.pem -o ConnectTimeout=30 ubuntu@%EC2_IP% echo "SSH connection validated" || exit 1
+                        plink -i id_rsa.ppk -no-antispoof -batch -P 22 ubuntu@%EC2_IP% echo "SSH connection validated" || exit 1
                     """
                 }
             }
         }
-        
 
         stage('Deploy to EC2') {
             steps {
@@ -103,17 +101,12 @@ pipeline {
             - ./Backend/.env
             restart: unless-stopped
         """
-                    // Then copy it to the server
-                    bat "scp -i test-key.pem -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/"
+                    // Copy docker-compose to remote server
+                    bat "pscp -i id_rsa.ppk docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/"
                     
-                    // Then run deployment commands
+                    // Run deployment commands
                     bat """
-                        ssh -i test-key.pem -o StrictHostKeyChecking=no ubuntu@%EC2_IP% "
-                            cd /home/ubuntu/recipe-app &&
-                            docker-compose pull --quiet &&
-                            docker-compose up -d --force-recreate --remove-orphans &&
-                            docker system prune -af
-                        "
+                        plink -i id_rsa.ppk -batch ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull --quiet && docker-compose up -d --force-recreate --remove-orphans && docker system prune -af"
                     """
                 }
             }
