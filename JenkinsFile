@@ -57,10 +57,11 @@ pipeline {
             steps {
                 // More verbosity with detailed output
                 sshagent(['ec2-ssh-key']) {
-                    bat "ssh -v -v -v -o StrictHostKeyChecking=no ubuntu@%EC2_IP% \"echo SSH CONNECTION SUCCESSFUL\""
+                    bat "ssh -vvv -o StrictHostKeyChecking=no ubuntu@${EC2_IP} \"echo SSH CONNECTION SUCCESSFUL\""
                 }
             }
         }
+
         
         stage('Deploy to EC2') {
             steps {
