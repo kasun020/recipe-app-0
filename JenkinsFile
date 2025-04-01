@@ -59,78 +59,59 @@ pipeline {
             }
         }
 
-        stage('Setup SSH Key') {
+        stage('Setup PuTTY SSH Key') {
             steps {
-                withCredentials([file(credentialsId: 'ec2-ssh-key', variable: 'SSH_KEY_PATH')]) {
-                    bat 'copy %SSH_KEY_PATH% test-key.pem'
-                    powershell '''
-                        $keyPath = "test-key.pem"
-                        $acl = Get-Acl $keyPath
-                        $acl.SetAccessRuleProtection($true, $false)
-                        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
-                        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                            [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
-                            "Read",
-                            "Allow"
-                        )
-                        $acl.AddAccessRule($rule)
-                        Set-Acl $keyPath $acl
-                        icacls $keyPath /inheritance:r /grant:r "$env:USERNAME:(R)"
+                withCredentials([file(credentialsId: 'ec2-ppk-key', variable: 'SSH_KEY_PATH')]) {
+                    bat 'copy %SSH_KEY_PATH% test-key.ppk'
+                }
+            }
+        }
+
+        stage('Test SSH with PuTTY') {
+            steps {
+                bat 'plink -i test-key.ppk -batch -v ubuntu@%EC2_IP% "echo SSH CONNECTION SUCCESSFUL"'
+            }
+        }
+
+        stage('Deploy to EC2 with PuTTY') {
+            steps {
+                script {
+                    // Create file locally first
+                    writeFile file: 'docker-compose.yml', text: """version: '3'
+        services:
+        frontend:
+            image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
+            ports:
+            - '80:80'
+            depends_on:
+            - backend
+            restart: always
+
+        backend:
+            image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
+            ports:
+            - '5000:5000'
+            env_file:
+            - ./Backend/.env
+            restart: always"""
+                    
+                    // Copy file to server
+                    bat 'pscp -i test-key.ppk -batch docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/'
+                    
+                    // Execute commands
+                    bat '''
+                        plink -i test-key.ppk -batch ubuntu@%EC2_IP% "
+                            cd /home/ubuntu/recipe-app
+                            docker pull %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
+                            docker pull %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
+                            docker-compose down
+                            docker-compose up -d
+                        "
                     '''
                 }
             }
         }
 
-        stage('Test SSH Connection') {
-            steps {
-                retry(count: env.SSH_RETRIES.toInteger()) {
-                    bat """
-                        ssh -v -o StrictHostKeyChecking=no -i test-key.pem -o ConnectTimeout=30 ubuntu@%EC2_IP% "
-                            echo 'SSH connection validated'
-                        " || exit 1
-                    """
-                }
-            }
-        }
-        
-        stage('Deploy to EC2') {
-            steps {
-                script {
-                    // Create docker-compose with proper escaping
-                    bat """
-                        ssh -i test-key.pem ubuntu@%EC2_IP% "cat > /home/ubuntu/recipe-app/docker-compose.yml" << EOF
-version: '3'
-services:
-  frontend:
-    image: %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  backend:
-    image: %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
-    ports:
-      - "5000:5000"
-    env_file:
-      - ./Backend/.env
-    restart: unless-stopped
-EOF
-                    """
-
-                    // Atomic deployment with rollback capability
-                    bat """
-                        ssh -i test-key.pem ubuntu@%EC2_IP% "
-                            cd /home/ubuntu/recipe-app
-                            docker-compose pull --quiet
-                            docker-compose up -d --force-recreate --remove-orphans
-                            docker system prune -af
-                        " || exit 1
-                    """
-                }
-            }
-        }
 
         stage('Run Tests') {
             steps {
