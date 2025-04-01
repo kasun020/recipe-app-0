@@ -7,6 +7,7 @@ pipeline {
         GIT_BRANCH = 'main'
         DOCKER_RETRIES = 3
         SSH_RETRIES = 3
+        PUTTY_PATH = 'C:\\Program Files\\PuTTY'  // Verify this path matches your installation
     }
     
     triggers {
@@ -14,6 +15,23 @@ pipeline {
     }
     
     stages {
+        stage('Verify Environment') {
+            steps {
+                script {
+                    // Verify PuTTY tools exist
+                    bat """
+                        where /q "${PUTTY_PATH}\\plink.exe" || exit 1
+                        where /q "${PUTTY_PATH}\\pscp.exe" || exit 1
+                    """
+                    
+                    // Verify credentials exist
+                    withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
+                        bat 'if not exist "%SSH_KEY_PATH%" exit 1'
+                    }
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 checkout([
@@ -46,7 +64,6 @@ pipeline {
                     passwordVariable: 'DOCKER_PWD'
                 )]) {
                     script {
-                        // Retryable login and push with backoff
                         retry(count: env.DOCKER_RETRIES.toInteger(), backoff: [factor: 2, delay: 30, max: 300]) {
                             bat """
                                 docker login -u %DOCKER_USER% -p %DOCKER_PWD% || exit 1
@@ -59,29 +76,14 @@ pipeline {
             }
         }
 
-        stage('Verify Tools') {
-            steps {
-                bat 'where plink'
-                bat 'where pscp'
-            }
-        }
-        
-        stage('Verify Credential') {
-            steps {
-                script {
-                    withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
-                        bat 'echo Credential exists: %SSH_KEY_PATH%'
-                        bat 'dir %SSH_KEY_PATH%'
-                    }
-                }
-            }
-        }
-
         stage('Setup SSH Key') {
             steps {
                 withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
-                    // Copy the key
-                    bat 'copy %SSH_KEY_PATH% id_rsa.ppk'
+                    // Load key into Pageant (PuTTY authentication agent)
+                    bat """
+                        "${PUTTY_PATH}\\pageant.exe" "%SSH_KEY_PATH%"
+                        timeout /t 5
+                    """
                 }
             }
         }
@@ -90,7 +92,7 @@ pipeline {
             steps {
                 retry(count: env.SSH_RETRIES.toInteger()) {
                     bat """
-                        plink -i id_rsa.ppk -no-antispoof -batch -P 22 ubuntu@%EC2_IP% echo "SSH connection validated" || exit 1
+                        "${PUTTY_PATH}\\plink.exe" -batch -ssh ubuntu@%EC2_IP% -P 22 echo "SSH Connection Verified" || exit 1
                     """
                 }
             }
@@ -99,43 +101,51 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
-                    // First create a local docker-compose file
-                    writeFile file: 'docker-compose.yml', text: """version: '3'
-                    services:
-                    frontend:
-                        image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
-                        ports:
-                        - "80:80"
-                        depends_on:
-                        - backend
-                        restart: unless-stopped
+                    // Create docker-compose.yml with proper Windows line endings
+                    writeFile file: 'docker-compose.yml', text: """|-
+                        version: '3'
+                        services:
+                          frontend:
+                            image: ${env.DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
+                            ports:
+                              - "80:80"
+                            depends_on:
+                              - backend
+                            restart: unless-stopped
+                          backend:
+                            image: ${env.DOCKER_HUB_CREDS_USR}/recipe-backend:latest
+                            ports:
+                              - "5000:5000"
+                            env_file:
+                              - ./Backend/.env
+                            restart: unless-stopped
+                    """.stripIndent()
 
-                    backend:
-                        image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
-                        ports:
-                        - "5000:5000"
-                        env_file:
-                        - ./Backend/.env
-                        restart: unless-stopped
-                    """
-                    // Copy docker-compose to remote server
-                    bat "pscp -i id_rsa.ppk docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/"
-                    
-                    // Run deployment commands
+                    // Copy compose file using pscp
                     bat """
-                        plink -i id_rsa.ppk -batch ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull --quiet && docker-compose up -d --force-recreate --remove-orphans && docker system prune -af"
+                        "${PUTTY_PATH}\\pscp.exe" -scp -batch -q -P 22 docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                    """
+
+                    // Execute deployment commands
+                    bat """
+                        "${PUTTY_PATH}\\plink.exe" -batch -ssh ubuntu@%EC2_IP% -P 22 "
+                            cd /home/ubuntu/recipe-app
+                            docker-compose down --remove-orphans
+                            docker-compose pull --quiet
+                            docker-compose up -d --force-recreate
+                            docker system prune -af
+                        "
                     """
                 }
             }
         }
 
-
-        stage('Run Tests') {
+        stage('Verify Deployment') {
             steps {
-                script {
+                retry(3) {
                     bat """
-                        curl -sSf http://%EC2_IP%/health-check > nul || exit 1
-                        curl -sSf http://%EC2_IP%/api/status > nul || exit 1
+                        curl -sSf http://%EC2_IP%/health-check --connect-timeout 30 || exit 1
+                        curl -sSf http://%EC2_IP%/api/status --connect-timeout 30 || exit 1
                     """
                 }
             }
@@ -143,30 +153,38 @@ pipeline {
         
         stage('Cleanup') {
             steps {
-                bat """
-                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% 2> nul || echo.
-                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% 2> nul || echo.
-                    del /q id_rsa.ppk 2> nul
-                """
+                script {
+                    // Remove temporary files
+                    bat """
+                        docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% 2> nul || echo.
+                        docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% 2> nul || echo.
+                        del /q docker-compose.yml 2> nul
+                    """
+                    
+                    // Kill Pageant process
+                    bat """
+                        taskkill /IM pageant.exe /F 2> nul
+                    """
+                }
             }
         }
+    }
     
     post {
+        always {
+            // Clean up credentials
+            bat """
+                docker logout 2> nul
+                del /q id_rsa.ppk 2> nul
+            """
+        }
         success {
-            echo 'Deployment successful! ✅'
             slackSend channel: '#deployments', 
                      message: "SUCCESS: Recipe App ${BUILD_NUMBER} deployed to ${EC2_IP}"
         }
         failure {
-            echo 'Deployment failed! ❌'
             slackSend channel: '#deployments',
-                     message: "FAILURE: Recipe App ${BUILD_NUMBER} failed to deploy"
-            script {
-                bat """
-                    docker logout
-                    del /q test-key.pem 2> nul
-                """
-            }
+                     message: "FAILURE: Recipe App ${BUILD_NUMBER} failed to deploy (Build URL: ${BUILD_URL})"
         }
     }
 }
