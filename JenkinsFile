@@ -77,20 +77,14 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Setup SSH Key') {
             steps {
                 withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
                     bat """
-                        :: Copy key to workspace
+                        :: Bypass Pageant and use key directly
                         copy "%SSH_KEY_PATH%" id_rsa.ppk
-
-                        :: Start Pageant and load key
-                        start "Pageant" /B "%PUTTY_PATH%\\pageant.exe" "id_rsa.ppk"
-
-                        :: Verify key loaded
-                        timeout /t 10
-                        tasklist | findstr /i "pageant" || exit 1
+                        icacls id_rsa.ppk /inheritance:r /grant:r "%USERNAME%":"(R)"
                     """
                 }
             }
