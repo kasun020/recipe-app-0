@@ -53,12 +53,21 @@ pipeline {
             }
         }
 
+        stage('Setup SSH Key') {
+            steps {
+                withCredentials([file(credentialsId: 'ec2-ssh-key-file', variable: 'SSH_KEY_PATH')]) {
+                    // Copy key to workspace with proper permissions
+                    bat 'copy %SSH_KEY_PATH% test-key.pem'
+                    bat 'icacls test-key.pem /inheritance:r'
+                    bat 'icacls test-key.pem /grant:r %USERNAME%:(R)'
+                }
+            }
+        }
+
         stage('Test SSH Connection') {
             steps {
-                // More verbosity with detailed output
-                sshagent(['ec2-ssh-key']) {
-                    bat "ssh -vvv -o StrictHostKeyChecking=no ubuntu@${EC2_IP} \"echo SSH CONNECTION SUCCESSFUL\""
-                }
+                // Use direct SSH key file instead of sshagent
+                bat 'ssh -v -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "echo SSH CONNECTION SUCCESSFUL"'
             }
         }
 
@@ -66,44 +75,48 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
-                    // Fix indentation in docker-compose.yml
-                    writeFile(file: 'docker-compose.yml', text: """version: '3'
+                    // Create docker-compose directly on EC2
+                    bat """
+                        ssh -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "cat > /home/ubuntu/recipe-app/docker-compose.yml << 'EOL'
+version: '3'
 services:
   frontend:
-    image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
+    image: %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
     ports:
-      - "80:80"
+      - '80:80'
     depends_on:
       - backend
     restart: always
 
   backend:
-    image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
+    image: %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
     ports:
-      - "5000:5000"
+      - '5000:5000'
     env_file:
       - ./Backend/.env
     restart: always
-""")
-                    echo "Docker compose file created successfully"
-                }
-                
-                // Original deployment with better error handling
-                sshagent(['ec2-ssh-key']) {
-                    script {
-                        def scpStatus = bat(script: "scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/", returnStatus: true)
-                        if (scpStatus != 0) {
-                            error("SCP file transfer failed with status code ${scpStatus}")
-                        }
-                        
-                        def sshStatus = bat(script: "ssh -o StrictHostKeyChecking=no ubuntu@%EC2_IP% \"cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose down && docker-compose up -d\"", returnStatus: true)
-                        if (sshStatus != 0) {
-                            error("SSH deployment command failed with status code ${sshStatus}")
-                        }
-                    }
+EOL"
+                    """
+
+                    // SSH into EC2 and deploy
+                    bat """
+                        ssh -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "
+                            cd /home/ubuntu/recipe-app
+                            
+                            # Pull the new images
+                            docker pull %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
+                            docker pull %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
+                            
+                            # Stop any running containers and start new ones
+                            docker-compose down
+                            docker-compose up -d
+                        "
+                    """
                 }
             }
-        }
+        }                    
+
+
         
         stage('Run Tests') {
             steps {
