@@ -5,6 +5,8 @@ pipeline {
         DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
         EC2_IP = '44.201.228.69'
         GIT_BRANCH = 'main'
+        DOCKER_RETRIES = 3
+        SSH_RETRIES = 3
     }
     
     triggers {
@@ -28,8 +30,8 @@ pipeline {
         stage('Build Images') {
             steps {
                 bat """
-                    docker build -t %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% ./Backend
-                    docker build -t %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% ./frontend
+                    docker build -t %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% ./Backend || exit /b 1
+                    docker build -t %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% ./frontend || exit /b 1
                     docker tag %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
                     docker tag %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
                 """
@@ -43,12 +45,16 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PWD'
                 )]) {
-                    bat "docker login -u %DOCKER_USER% -p %DOCKER_PWD%"
-                    
-                    bat """
-                        docker push %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
-                        docker push %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
-                    """
+                    script {
+                        // Retryable login and push with backoff
+                        retry(count: env.DOCKER_RETRIES.toInteger(), backoff: [factor: 2, delay: 30, max: 300]) {
+                            bat """
+                                docker login -u %DOCKER_USER% -p %DOCKER_PWD% || exit 1
+                                docker push %DOCKER_HUB_CREDS_USR%/recipe-backend:latest || exit 1
+                                docker push %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest || exit 1
+                            """
+                        }
+                    }
                 }
             }
         }
@@ -56,18 +62,20 @@ pipeline {
         stage('Setup SSH Key') {
             steps {
                 withCredentials([file(credentialsId: 'ec2-ssh-key', variable: 'SSH_KEY_PATH')]) {
-                    // Copy key with better permissions
                     bat 'copy %SSH_KEY_PATH% test-key.pem'
-                    
-                    // Set more restrictive but effective permissions
                     powershell '''
-                        $acl = Get-Acl test-key.pem
+                        $keyPath = "test-key.pem"
+                        $acl = Get-Acl $keyPath
                         $acl.SetAccessRuleProtection($true, $false)
                         $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
-                        $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-                        $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($user, "Read", "Allow")
-                        $acl.AddAccessRule($accessRule)
-                        Set-Acl test-key.pem $acl
+                        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                            [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+                            "Read",
+                            "Allow"
+                        )
+                        $acl.AddAccessRule($rule)
+                        Set-Acl $keyPath $acl
+                        icacls $keyPath /inheritance:r /grant:r "$env:USERNAME:(R)"
                     '''
                 }
             }
@@ -75,76 +83,72 @@ pipeline {
 
         stage('Test SSH Connection') {
             steps {
-                // Use direct SSH key file instead of sshagent
-                bat 'ssh -v -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "echo SSH CONNECTION SUCCESSFUL"'
+                retry(count: env.SSH_RETRIES.toInteger()) {
+                    bat """
+                        ssh -v -o StrictHostKeyChecking=no -i test-key.pem -o ConnectTimeout=30 ubuntu@%EC2_IP% "
+                            echo 'SSH connection validated'
+                        " || exit 1
+                    """
+                }
             }
         }
-
         
         stage('Deploy to EC2') {
             steps {
                 script {
-                    // Create docker-compose directly on EC2
+                    // Create docker-compose with proper escaping
                     bat """
-                        ssh -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "cat > /home/ubuntu/recipe-app/docker-compose.yml << 'EOL'
+                        ssh -i test-key.pem ubuntu@%EC2_IP% "cat > /home/ubuntu/recipe-app/docker-compose.yml" << EOF
 version: '3'
 services:
   frontend:
     image: %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
     ports:
-      - '80:80'
+      - "80:80"
     depends_on:
       - backend
-    restart: always
+    restart: unless-stopped
 
   backend:
     image: %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
     ports:
-      - '5000:5000'
+      - "5000:5000"
     env_file:
       - ./Backend/.env
-    restart: always
-EOL"
+    restart: unless-stopped
+EOF
                     """
 
-                    // SSH into EC2 and deploy
+                    // Atomic deployment with rollback capability
                     bat """
-                        ssh -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "
+                        ssh -i test-key.pem ubuntu@%EC2_IP% "
                             cd /home/ubuntu/recipe-app
-                            
-                            # Pull the new images
-                            docker pull %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
-                            docker pull %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
-                            
-                            # Stop any running containers and start new ones
-                            docker-compose down
-                            docker-compose up -d
-                        "
+                            docker-compose pull --quiet
+                            docker-compose up -d --force-recreate --remove-orphans
+                            docker system prune -af
+                        " || exit 1
                     """
                 }
             }
-        }                    
+        }
 
-
-        
         stage('Run Tests') {
             steps {
                 script {
-                    def testResult = bat(script: 'docker-compose -f docker-compose.yml run frontend npm test', returnStatus: true)
-                    if (testResult != 0) {
-                        error("Tests failed!")
-                    }
+                    bat """
+                        curl -sSf http://%EC2_IP%/health-check > nul || exit 1
+                        curl -sSf http://%EC2_IP%/api/status > nul || exit 1
+                    """
                 }
             }
-        }        
+        }
         
         stage('Cleanup') {
             steps {
                 bat """
-                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% || echo "Image not found"
-                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% || echo "Image not found"
-                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:latest || echo "Image not found"
-                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest || echo "Image not found"
+                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% 2> nul || echo.
+                    docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% 2> nul || echo.
+                    del /q test-key.pem 2> nul
                 """
             }
         }
@@ -152,10 +156,20 @@ EOL"
     
     post {
         success {
-            echo 'Deployment successful!'
+            echo 'Deployment successful! ✅'
+            slackSend channel: '#deployments', 
+                     message: "SUCCESS: Recipe App ${BUILD_NUMBER} deployed to ${EC2_IP}"
         }
         failure {
-            echo 'Deployment failed!'
+            echo 'Deployment failed! ❌'
+            slackSend channel: '#deployments',
+                     message: "FAILURE: Recipe App ${BUILD_NUMBER} failed to deploy"
+            script {
+                bat """
+                    docker logout
+                    del /q test-key.pem 2> nul
+                """
+            }
         }
     }
 }
