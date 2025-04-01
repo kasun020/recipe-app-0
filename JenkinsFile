@@ -42,50 +42,49 @@ pipeline {
                     credentialsId: 'docker-hub-credentials',
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PWD'
-        )]) {
-            bat "docker login -u %DOCKER_USER% -p %DOCKER_PWD%"
-            
-            bat """
-                docker push %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
-                docker push %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
-            """
+                )]) {
+                    bat "docker login -u %DOCKER_USER% -p %DOCKER_PWD%"
+                    
+                    bat """
+                        docker push %DOCKER_HUB_CREDS_USR%/recipe-backend:latest
+                        docker push %DOCKER_HUB_CREDS_USR%/recipe-frontend:latest
+                    """
+                }
+            }
+        }
+
+        // Move the SSH test to its own stage
+        stage('Test SSH Connection') {
+            steps {
+                sshagent(['ec2-ssh-key']) {
+                    bat "ssh -o StrictHostKeyChecking=no -v ubuntu@%EC2_IP% \"echo SSH CONNECTION SUCCESSFUL\""
                 }
             }
         }
         
-
         stage('Deploy to EC2') {
             steps {
                 script {
                     // Fix indentation in docker-compose.yml
                     writeFile(file: 'docker-compose.yml', text: """version: '3'
-        services:
-        frontend:
-            image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
-            ports:
-            - "80:80"
-            depends_on:
-            - backend
-            restart: always
+services:
+  frontend:
+    image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
 
-        backend:
-            image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
-            ports:
-            - "5000:5000"
-            env_file:
-            - ./Backend/.env
-            restart: always
-        """)
+  backend:
+    image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./Backend/.env
+    restart: always
+""")
                     echo "Docker compose file created successfully"
-                }
-                
-                // Add a test stage to verify SSH credentials
-                stage('Test SSH Connection') {
-                    steps {
-                        sshagent(['ec2-ssh-key']) {
-                            bat "ssh -o StrictHostKeyChecking=no -v ubuntu@%EC2_IP% \"echo SSH CONNECTION SUCCESSFUL\""
-                        }
-                    }
                 }
                 
                 // Original deployment with better error handling
@@ -103,10 +102,8 @@ pipeline {
                     }
                 }
             }
-        }   
-                
-                
-
+        }
+        
         stage('Run Tests') {
             steps {
                 script {
