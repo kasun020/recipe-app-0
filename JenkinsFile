@@ -53,11 +53,11 @@ pipeline {
             }
         }
 
-        // Move the SSH test to its own stage
         stage('Test SSH Connection') {
             steps {
+                // More verbosity with detailed output
                 sshagent(['ec2-ssh-key']) {
-                    bat "ssh -o StrictHostKeyChecking=no -v ubuntu@%EC2_IP% \"echo SSH CONNECTION SUCCESSFUL\""
+                    bat "ssh -v -v -v -o StrictHostKeyChecking=no ubuntu@%EC2_IP% \"echo SSH CONNECTION SUCCESSFUL\""
                 }
             }
         }
