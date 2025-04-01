@@ -77,14 +77,20 @@ pipeline {
                 }
             }
         }
-
+        
         stage('Setup SSH Key') {
             steps {
                 withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
-                    // Load key into Pageant (PuTTY authentication agent)
                     bat """
-                        "${PUTTY_PATH}\\pageant.exe" "%SSH_KEY_PATH%"
-                        timeout /t 5
+                        :: Copy key to workspace
+                        copy "%SSH_KEY_PATH%" id_rsa.ppk
+
+                        :: Start Pageant and load key
+                        start "Pageant" /B "%PUTTY_PATH%\\pageant.exe" "id_rsa.ppk"
+
+                        :: Verify key loaded
+                        timeout /t 10
+                        tasklist | findstr /i "pageant" || exit 1
                     """
                 }
             }
