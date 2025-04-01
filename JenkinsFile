@@ -18,15 +18,26 @@ pipeline {
         stage('Verify Environment') {
             steps {
                 script {
-                    // Verify PuTTY tools exist
+                    // Verify PuTTY tools using correct Windows syntax
                     bat """
-                        where /q "${PUTTY_PATH}\\plink.exe" || exit 1
-                        where /q "${PUTTY_PATH}\\pscp.exe" || exit 1
+                        if not exist "%PUTTY_PATH%\\plink.exe" (
+                            echo Fatal Error: plink.exe not found in %PUTTY_PATH%
+                            exit /b 1
+                        )
+                        if not exist "%PUTTY_PATH%\\pscp.exe" (
+                            echo Fatal Error: pscp.exe not found in %PUTTY_PATH%
+                            exit /b 1
+                        )
                     """
                     
                     // Verify credentials exist
                     withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
-                        bat 'if not exist "%SSH_KEY_PATH%" exit 1'
+                        bat """
+                            if not exist "%SSH_KEY_PATH%" (
+                                echo Fatal Error: SSH key file not found
+                                exit /b 1
+                            )
+                        """
                     }
                 }
             }
