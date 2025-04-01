@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
-        EC2_IP = '54.87.184.227 |'
+        EC2_IP = '54.87.184.227'
         GIT_BRANCH = 'main'
         DOCKER_RETRIES = 3
         SSH_RETRIES = 3
@@ -78,69 +78,52 @@ pipeline {
             }
         }
 
-        stage('Setup SSH Key') {
+        stage('Setup and Test SSH') {
             steps {
                 withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
+                    // Simple copy with minimal permissions
                     bat """
-                        :: Bypass Pageant and use key directly
-                        copy "%SSH_KEY_PATH%" id_rsa.ppk
-                        icacls id_rsa.ppk /inheritance:r /grant:r "%USERNAME%":"(R)"
+                        echo Copying key from %SSH_KEY_PATH%
+                        copy "%SSH_KEY_PATH%" key.ppk
+                        
+                        :: Test SSH connection with explicit key reference
+                        "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -hostkey=* -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
                     """
                 }
             }
         }
 
-        stage('Test SSH Connection') {
-            steps {
-                retry(count: env.SSH_RETRIES.toInteger()) {
-                    bat """
-                        "${PUTTY_PATH}\\plink.exe" -batch -ssh ubuntu@%EC2_IP% -P 22 echo "SSH Connection Verified" || exit 1
-                    """
-                }
-            }
-        }
 
         stage('Deploy to EC2') {
             steps {
                 script {
-                    // Create docker-compose.yml with proper Windows line endings
-                    writeFile file: 'docker-compose.yml', text: """|-
-                        version: '3'
-                        services:
-                          frontend:
-                            image: ${env.DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
-                            ports:
-                              - "80:80"
-                            depends_on:
-                              - backend
-                            restart: unless-stopped
-                          backend:
-                            image: ${env.DOCKER_HUB_CREDS_USR}/recipe-backend:latest
-                            ports:
-                              - "5000:5000"
-                            env_file:
-                              - ./Backend/.env
-                            restart: unless-stopped
-                    """.stripIndent()
-
-                    // Copy compose file using pscp
+                    // Create compose file
+                    writeFile file: 'docker-compose.yml', text: """version: '3'
+        services:
+        frontend:
+            image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
+            ports:
+            - "80:80"
+            depends_on:
+            - backend
+            restart: unless-stopped
+        backend:
+            image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
+            ports:
+            - "5000:5000"
+            env_file:
+            - ./Backend/.env
+            restart: unless-stopped"""
+                    
+                    // Use the key file in both commands
                     bat """
-                        "${PUTTY_PATH}\\pscp.exe" -scp -batch -q -P 22 docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
-                    """
-
-                    // Execute deployment commands
-                    bat """
-                        "${PUTTY_PATH}\\plink.exe" -batch -ssh ubuntu@%EC2_IP% -P 22 "
-                            cd /home/ubuntu/recipe-app
-                            docker-compose down --remove-orphans
-                            docker-compose pull --quiet
-                            docker-compose up -d --force-recreate
-                            docker system prune -af
-                        "
+                        "${PUTTY_PATH}\\pscp.exe" -batch -i key.ppk docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                        "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -ssh ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
                     """
                 }
             }
         }
+
 
         stage('Verify Deployment') {
             steps {
