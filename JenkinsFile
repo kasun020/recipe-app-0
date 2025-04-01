@@ -56,10 +56,19 @@ pipeline {
         stage('Setup SSH Key') {
             steps {
                 withCredentials([file(credentialsId: 'ec2-ssh-key', variable: 'SSH_KEY_PATH')]) {
-                    // Copy key to workspace with proper permissions
+                    // Copy key with better permissions
                     bat 'copy %SSH_KEY_PATH% test-key.pem'
-                    bat 'icacls test-key.pem /inheritance:r'
-                    bat 'icacls test-key.pem /grant:r %USERNAME%:(R)'
+                    
+                    // Set more restrictive but effective permissions
+                    powershell '''
+                        $acl = Get-Acl test-key.pem
+                        $acl.SetAccessRuleProtection($true, $false)
+                        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+                        $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+                        $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($user, "Read", "Allow")
+                        $acl.AddAccessRule($accessRule)
+                        Set-Acl test-key.pem $acl
+                    '''
                 }
             }
         }
