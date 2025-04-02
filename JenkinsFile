@@ -81,18 +81,18 @@ pipeline {
 stage('Setup and Test SSH') {
     steps {
         withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
-            // Convert the OpenSSH key to PPK format
+            // Use OpenSSH client instead of PuTTY
             bat """
                 echo Copying key from %SSH_KEY_PATH%
-                copy "%SSH_KEY_PATH%" openssh.key
+                copy "%SSH_KEY_PATH%" test-key.pem
                 
-                :: Convert to PPK format (if needed)
-                "%PUTTY_PATH%\\puttygen.exe" openssh.key -o key.ppk
+                :: Ensure proper permissions
+                icacls test-key.pem /inheritance:r /grant:r "%USERNAME%:R"
                 
                 :: Test SSH connection with retry
                 set ATTEMPTS=0
                 :RETRY_SSH
-                "%PUTTY_PATH%\\plink.exe" -batch -i key.ppk -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
+                ssh -o StrictHostKeyChecking=no -o BatchMode=yes -i test-key.pem ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
                 if errorlevel 1 (
                     set /a ATTEMPTS+=1
                     if !ATTEMPTS! lss 3 (
@@ -130,14 +130,18 @@ stage('Deploy to EC2') {
         - ./Backend/.env
         restart: unless-stopped"""
             
-            // Re-generate the key for this stage
+            // Use OpenSSH instead of PuTTY
             withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
                 bat """
                     echo Regenerating key for deployment
-                    copy "%SSH_KEY_PATH%" key.ppk
+                    copy "%SSH_KEY_PATH%" test-key.pem
                     
-                    "${PUTTY_PATH}\\pscp.exe" -batch -i key.ppk docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
-                    "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -ssh ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
+                    :: Ensure proper permissions
+                    icacls test-key.pem /inheritance:r /grant:r "%USERNAME%:R"
+                    
+                    :: Transfer and execute commands
+                    scp -o StrictHostKeyChecking=no -i test-key.pem docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                    ssh -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
                 """
             }
         }
@@ -176,12 +180,12 @@ stage('Deploy to EC2') {
     
     post {
         always {
-           // Clean up credentials
-        bat """
-            docker logout 2> nul
-            del /q key.ppk 2> nul
-        """
-        }
+       // Clean up credentials
+       bat """
+           docker logout 2> nul
+           del /q key.ppk openssh.key test-key.pem 2> nul
+       """
+    }
         success {
             slackSend channel: '#deployments', 
                      message: "SUCCESS: Recipe App ${BUILD_NUMBER} deployed to ${EC2_IP}"
