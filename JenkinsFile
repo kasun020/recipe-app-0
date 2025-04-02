@@ -152,20 +152,31 @@ stage('Deploy to EC2') {
         - ./Backend/.env
         restart: unless-stopped"""
             
-            // Use the PuTTY tools instead of SSH since they're less strict about permissions
+            // Use OpenSSH which worked in the previous stage
             withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
                 bat """
-                    :: Use PuTTY tools which are less strict about permissions
-                    echo Using PuTTY tools for deployment
+                    :: Use OpenSSH which worked in the test stage
+                    echo Using OpenSSH for deployment
+                    
+                    :: Copy the key to the secure location if not already there
+                    if not exist ssh_temp\\id_rsa (
+                        mkdir ssh_temp 2>nul
+                        copy "%SSH_KEY_PATH%" ssh_temp\\id_rsa
+                        icacls ssh_temp\\id_rsa /inheritance:r
+                        icacls ssh_temp\\id_rsa /remove:g "BUILTIN\\Users"
+                        icacls ssh_temp\\id_rsa /remove:g "Everyone"
+                        icacls ssh_temp\\id_rsa /remove:g "Authenticated Users"
+                        icacls ssh_temp\\id_rsa /grant:r "SYSTEM:(R)"
+                    )
                     
                     :: Create directory on remote server
-                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -hostkey "SHA256:n8bxB+8FwP54pCnsK13FKPyQOa7LrYzewD/uZyjgcWI" -ssh ubuntu@%EC2_IP% "mkdir -p /home/ubuntu/recipe-app"
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "mkdir -p /home/ubuntu/recipe-app"
                     
                     :: Transfer docker-compose file
-                    "%PUTTY_PATH%\\pscp.exe" -batch -i "%SSH_KEY_PATH%" -hostkey "SHA256:n8bxB+8FwP54pCnsK13FKPyQOa7LrYzewD/uZyjgcWI" docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                    scp -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
                     
                     :: Deploy using docker-compose
-                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -hostkey "SHA256:n8bxB+8FwP54pCnsK13FKPyQOa7LrYzewD/uZyjgcWI" -ssh ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
                 """
             }
         }
