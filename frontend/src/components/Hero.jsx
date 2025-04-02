@@ -6,7 +6,7 @@ function Hero() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24">
         <div className="flex flex-col md:flex-row items-center">
           {/* Text Content */}
-          <div className="md:w-1/2 mb-10 md:mb-0 md:pr-10">
+          <div className="md:w-1/2 mb-10 md:mb-0 md:pr-10 animate-fade-in">
             <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-4">
               Discover & Share Amazing Recipes
             </h1>
@@ -17,13 +17,13 @@ function Hero() {
             <div className="flex flex-wrap gap-4">
               <Link
                 to="/register"
-                className="px-6 py-3 bg-green-500 text-white font-medium rounded-lg hover:bg-green-600 transition duration-300"
+                className="px-6 py-3 bg-green-500 text-white font-medium rounded-lg hover:bg-green-600 transition-transform transform hover:scale-110"
               >
                 Get Started
               </Link>
               <Link
                 to="/recipes"
-                className="px-6 py-3 bg-white text-green-500 font-medium rounded-lg border border-green-500 hover:bg-green-50 transition duration-300"
+                className="px-6 py-3 bg-white text-green-500 font-medium rounded-lg border border-green-500 hover:bg-green-50 transition-transform transform hover:scale-110"
               >
                 Browse Recipes
               </Link>
@@ -31,23 +31,13 @@ function Hero() {
           </div>
 
           {/* Image */}
-          <div className="md:w-1/2">
-            <div className="rounded-lg overflow-hidden shadow-xl">
-              
-              {<img 
-                src="/images/hero-food.jpg" 
-                alt="Delicious food on a table" 
+          <div className="md:w-1/2 animate-slide-up">
+            <div className="rounded-full overflow-hidden shadow-xl">
+              <img
+                src="/images/hero-food.jpg"
+                alt="Delicious food on a table"
                 className="w-full h-auto"
-              />}
-
-              {/* Placeholder if you don't have an image yet */}
-              {/* <div className="bg-gradient-to-br from-green-300 to-green-500 aspect-video flex items-center justify-center">
-                <div className="text-center p-6">
-                  <span className="text-white text-xl font-semibold">
-                    Your Culinary Journey Starts Here
-                  </span>
-                </div>
-              </div> */}
+              />
             </div>
           </div>
         </div>

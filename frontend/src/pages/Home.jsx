@@ -25,13 +25,15 @@ function Home() {
       {/* Removed the duplicate Navbar component */}
       <Hero />
       <div className="container mx-auto px-4 py-8">
-        <h2 className="text-2xl font-bold mb-6">Latest Recipes</h2>
+        <h2 className="text-2xl font-bold mb-6 animate-fade-in">
+          Latest Recipes
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {recipes.length > 0 ? (
             recipes.map((recipe) => (
               <div
                 key={recipe._id}
-                className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow"
+                className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow transform hover:scale-105 animate-slide-up"
               >
                 <h2 className="text-xl font-semibold mb-3 text-gray-800">
                   {recipe.title}
@@ -48,6 +50,9 @@ function Home() {
                   Instructions:
                 </h3>
                 <p className="text-gray-600">{recipe.instructions}</p>
+                <button className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-transform transform hover:scale-110">
+                  View Recipe
+                </button>
               </div>
             ))
           ) : (
