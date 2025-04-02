@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
-        EC2_IP = '54.87.184.227'
+        EC2_IP = '18.207.113.212'
         GIT_BRANCH = 'main'
         DOCKER_RETRIES = 3
         SSH_RETRIES = 3
@@ -81,13 +81,29 @@ pipeline {
 stage('Setup and Test SSH') {
     steps {
         withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
-            // Simple copy with minimal permissions
+            // Convert the OpenSSH key to PPK format
             bat """
                 echo Copying key from %SSH_KEY_PATH%
-                copy "%SSH_KEY_PATH%" key.ppk
+                copy "%SSH_KEY_PATH%" openssh.key
                 
-                :: Test SSH connection (removed invalid -hostkey=* parameter)
-                "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
+                :: Convert to PPK format (if needed)
+                "%PUTTY_PATH%\\puttygen.exe" openssh.key -o key.ppk
+                
+                :: Test SSH connection with retry
+                set ATTEMPTS=0
+                :RETRY_SSH
+                "%PUTTY_PATH%\\plink.exe" -batch -i key.ppk -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
+                if errorlevel 1 (
+                    set /a ATTEMPTS+=1
+                    if !ATTEMPTS! lss 3 (
+                        echo Retrying SSH connection attempt !ATTEMPTS! of 3...
+                        timeout /t 5
+                        goto RETRY_SSH
+                    ) else (
+                        echo SSH connection failed after 3 attempts
+                        exit /b 1
+                    )
+                )
             """
         }
     }
