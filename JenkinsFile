@@ -175,8 +175,11 @@ stage('Deploy to EC2') {
                     :: Transfer docker-compose file
                     scp -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
                     
-                    :: Install docker-compose if not already installed
-                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "if ! command -v docker-compose &> /dev/null; then echo 'Installing docker-compose...'; sudo apt-get update && sudo apt-get install -y docker-compose-plugin docker-compose; fi"
+                    :: Install Docker if not already installed
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "if ! command -v docker &> /dev/null; then echo 'Installing Docker...'; sudo apt-get update && sudo apt-get install -y ca-certificates curl && sudo install -m 0755 -d /etc/apt/keyrings && sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && sudo chmod a+r /etc/apt/keyrings/docker.asc && echo \\"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo \\\"\$VERSION_CODENAME\\\") stable\\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin && sudo usermod -aG docker ubuntu; fi"
+                    
+                    :: Install docker-compose standalone if needed
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "if ! command -v docker-compose &> /dev/null; then echo 'Installing docker-compose...'; sudo curl -L \\"https://github.com/docker/compose/releases/download/v2.23.3/docker-compose-linux-x86_64\\" -o /usr/local/bin/docker-compose && sudo chmod +x /usr/local/bin/docker-compose; fi"
                     
                     :: Deploy using docker-compose - try both standalone and plugin versions
                     ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && (docker-compose pull && docker-compose up -d || docker compose pull && docker compose up -d)"
