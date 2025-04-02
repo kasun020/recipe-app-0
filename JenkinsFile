@@ -206,8 +206,8 @@ services:
                     ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker logs recipe-app-frontend-1 --tail 10"
                     ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker logs recipe-app-backend-1 --tail 10"
                     
-                    :: Check that the ports are being listened to
-                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo netstat -tulpn | grep -E '80|5000'"
+                    :: Install and use ss command instead of netstat (more modern)
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo apt-get install -y iproute2 2>/dev/null || echo 'iproute2 already installed' && sudo ss -tulpn | grep -E '80|5000'"
                 """
             }
             
@@ -256,14 +256,36 @@ EC2 > Security Groups > [Your EC2 Instance's Security Group] > Edit inbound rule
     
     post {
         always {
-            // Clean up credentials
-            bat """
-                echo Performing final cleanup...
-                docker logout 2> nul || echo Docker already logged out
-                if exist ssh_temp rd /s /q ssh_temp 2> nul || echo SSH temp directory already removed
-                taskkill /IM ssh.exe /F 2> nul || echo No SSH processes to kill
-                taskkill /IM pageant.exe /F 2> nul || echo No Pageant processes to kill
-            """
+            // Clean up credentials safely
+            script {
+                try {
+                    bat """
+                        echo Performing final cleanup...
+                        docker logout 2>nul || echo Docker already logged out
+                    """
+                    // Use a try/catch for each potentially failing operation
+                    try {
+                        bat "if exist ssh_temp rd /s /q ssh_temp 2>nul"
+                    } catch (Exception e) {
+                        echo "Failed to remove SSH temp directory: ${e.message}"
+                    }
+                    
+                    // Attempt to kill processes but don't fail if they're not running
+                    try {
+                        bat "taskkill /IM ssh.exe /F 2>nul || echo No SSH processes to kill"
+                    } catch (Exception e) {
+                        echo "No SSH processes to kill"
+                    }
+                    
+                    try {
+                        bat "taskkill /IM pageant.exe /F 2>nul || echo No Pageant processes to kill"
+                    } catch (Exception e) {
+                        echo "No Pageant processes to kill"
+                    }
+                } catch (Exception e) {
+                    echo "Cleanup encountered an error: ${e.message}"
+                }
+            }
         }
         success {
             script {
