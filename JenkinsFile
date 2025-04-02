@@ -174,16 +174,16 @@ services:
                     scp -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
                     
                     :: Simpler Docker installation command
-                    ssh -o StrictHostKeyChecking-no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "if ! command -v docker &> /dev/null; then echo 'Installing Docker...'; sudo apt-get update && sudo apt-get install -y docker.io && sudo systemctl start docker && sudo systemctl enable docker && sudo usermod -aG docker ubuntu; fi"
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "if ! command -v docker &> /dev/null; then echo 'Installing Docker...'; sudo apt-get update && sudo apt-get install -y docker.io && sudo systemctl start docker && sudo systemctl enable docker && sudo usermod -aG docker ubuntu; fi"
                     
                     :: Install docker-compose standalone if needed
-                    ssh -o StrictHostKeyChecking-no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "if ! command -v docker-compose &> /dev/null; then echo 'Installing docker-compose...'; sudo curl -L \\"https://github.com/docker/compose/releases/download/v2.23.3/docker-compose-linux-x86_64\\" -o /usr/local/bin/docker-compose && sudo chmod +x /usr/local/bin/docker-compose; fi"
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "if ! command -v docker-compose &> /dev/null; then echo 'Installing docker-compose...'; sudo curl -L \\"https://github.com/docker/compose/releases/download/v2.23.3/docker-compose-linux-x86_64\\" -o /usr/local/bin/docker-compose && sudo chmod +x /usr/local/bin/docker-compose; fi"
                     
                     :: Deploy using docker-compose - try different approaches
-                    ssh -o StrictHostKeyChecking-no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && (sudo docker-compose pull && sudo docker-compose up -d || sudo /usr/local/bin/docker-compose pull && sudo /usr/local/bin/docker-compose up -d || sudo docker compose pull && sudo docker compose up --detach || sudo docker-compose up -d --no-color < /dev/null &)"
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && (sudo docker-compose pull && sudo docker-compose up -d || sudo /usr/local/bin/docker-compose pull && sudo /usr/local/bin/docker-compose up -d || sudo docker compose pull && sudo docker compose up --detach || sudo docker-compose up -d --no-color < /dev/null &)"
                     
                     :: Verify containers are running
-                    ssh -o StrictHostKeyChecking-no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker ps | grep recipe"
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker ps | grep recipe"
                 """
             }
         }
