@@ -89,17 +89,39 @@ stage('Setup and Test SSH') {
                 :: Copy the key to the secure location
                 copy "%SSH_KEY_PATH%" ssh_temp\\id_rsa
                 
-                :: Set strict permissions using cacls (older but sometimes more reliable)
-                cacls ssh_temp\\id_rsa /P /E %USERNAME%:R
-                cacls ssh_temp\\id_rsa /P /E SYSTEM:R
+                :: Set very restrictive permissions using icacls (modern tool)
+                :: First remove all existing permissions
+                icacls ssh_temp\\id_rsa /inheritance:r
+                icacls ssh_temp\\id_rsa /remove:g "BUILTIN\\Users"
+                icacls ssh_temp\\id_rsa /remove:g "Everyone"
+                icacls ssh_temp\\id_rsa /remove:g "Authenticated Users"
+                
+                :: Grant only necessary permissions
+                icacls ssh_temp\\id_rsa /grant:r "%USERNAME%:(R)"
+                
+                :: Verify final permissions
+                icacls ssh_temp\\id_rsa
                 
                 :: Test connection using simpler command
                 echo Testing SSH connection...
-                ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
+                
+                :: Try using the SSH_ASKPASS environment variable to avoid permission checks
+                SET SSH_ASKPASS=nul
+                
+                :: Try alternative SSH options for Windows
+                ssh -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -i ssh_temp\\id_rsa ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
                 
                 if errorlevel 1 (
                     echo SSH connection failed with OpenSSH
-                    exit /b 1
+                    
+                    :: As a fallback, try using PuTTY if SSH fails
+                    echo Falling back to PuTTY...
+                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
+                    
+                    if errorlevel 1 (
+                        echo Both SSH and PuTTY connection methods failed
+                        exit /b 1
+                    )
                 )
                 
                 echo SSH connection successful!
@@ -129,18 +151,20 @@ stage('Deploy to EC2') {
         - ./Backend/.env
         restart: unless-stopped"""
             
-            // Use the simple SSH approach that worked
+            // Use the PuTTY tools instead of SSH since they're less strict about permissions
             withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
                 bat """
-                    :: Use the key from the existing directory
-                    echo Using key from ssh_temp directory
+                    :: Use PuTTY tools which are less strict about permissions
+                    echo Using PuTTY tools for deployment
                     
-                    :: First create directory structure if needed
-                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "mkdir -p /home/ubuntu/recipe-app"
+                    :: Create directory on remote server
+                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -ssh ubuntu@%EC2_IP% "mkdir -p /home/ubuntu/recipe-app"
                     
-                    :: Transfer and execute commands
-                    scp -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
-                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
+                    :: Transfer docker-compose file
+                    "%PUTTY_PATH%\\pscp.exe" -batch -i "%SSH_KEY_PATH%" docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                    
+                    :: Deploy using docker-compose
+                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -ssh ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
                 """
             }
         }
