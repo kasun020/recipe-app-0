@@ -191,64 +191,63 @@ services:
 }
 
         stage('Verify Deployment') {
-            steps {
-                script {
-                    // Add a delay to allow the application to fully initialize
-                    bat "echo Waiting for containers to initialize... && timeout /t 20"
+    steps {
+        script {
+            // Use ping with a count instead of timeout for a delay
+            bat "echo Waiting for containers to initialize... && ping 127.0.0.1 -n 20 > nul"
+            
+            // Check the status of the containers one more time 
+            withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
+                bat """
+                    echo Verifying container status...
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker ps | grep recipe"
                     
-                    // Check the status of the containers one more time 
-                    withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
-                        bat """
-                            echo Verifying container status...
-                            ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker ps | grep recipe"
-                            
-                            :: Check container logs for errors
-                            ssh -o StrictHostKeyChecking-no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker logs recipe-app-frontend-1 --tail 10"
-                            ssh -o StrictHostKeyChecking-no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker logs recipe-app-backend-1 --tail 10"
-                            
-                            :: Check that the ports are being listened to
-                            ssh -o StrictHostKeyChecking-no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo netstat -tulpn | grep -E '80|5000'"
-                        """
-                    }
+                    :: Check container logs for errors
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker logs recipe-app-frontend-1 --tail 10"
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo docker logs recipe-app-backend-1 --tail 10"
                     
-                    // Try to verify local access on the server first
-                    withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
-                        bat """
-                            echo Testing local access on server...
-                            ssh -o StrictHostKeyChecking-no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "curl -s http://localhost/health-check || echo 'Frontend health check failed'"
-                            ssh -o StrictHostKeyChecking-no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "curl -s http://localhost:5000/api/status || echo 'Backend health check failed'"
-                        """
-                    }
-                    
-                    // Now try external access (with more relaxed error handling)
-                    bat """
-                        echo Verifying external access to the application...
-                        curl -v http://%EC2_IP%/health-check --connect-timeout 10 || echo "External frontend check failed but continuing..."
-                        curl -v http://%EC2_IP%:5000/api/status --connect-timeout 10 || echo "External backend check failed but continuing..."
-                    """
-                    
-                    echo "Deployment verification completed - check logs for details. The application may need security group configuration to allow external access."
-                }
+                    :: Check that the ports are being listened to
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "sudo netstat -tulpn | grep -E '80|5000'"
+                """
             }
+            
+            // Try to verify local access on the server first
+            withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
+                bat """
+                    echo Testing local access on server...
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "curl -s http://localhost/health-check || echo 'Frontend health check failed'"
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "curl -s http://localhost:5000/api/status || echo 'Backend health check failed'"
+                """
+            }
+            
+            // Now try external access (with more relaxed error handling)
+            bat """
+                echo Verifying external access to the application...
+                curl -v http://%EC2_IP%/health-check --connect-timeout 10 || echo "External frontend check failed but continuing..."
+                curl -v http://%EC2_IP%:5000/api/status --connect-timeout 10 || echo "External backend check failed but continuing..."
+            """
+            
+            echo """
+=====================================
+IMPORTANT: If external verification fails, make sure the EC2 security group 
+allows inbound traffic on ports 80 and 5000 from all sources (0.0.0.0/0).
+This can be configured in the AWS Console under:
+EC2 > Security Groups > [Your EC2 Instance's Security Group] > Edit inbound rules
+=====================================
+"""
         }
+    }
+}
         
         stage('Cleanup') {
     steps {
         script {
             // Remove temporary files
             bat """
-                docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% 2> nul || echo.
-                docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% 2> nul || echo.
-                del /q docker-compose.yml 2> nul
-                
-                :: Remove SSH directory
-                rd /s /q ssh_temp 2> nul || echo.
-            """
-            
-            // Kill any remaining processes
-            bat """
-                taskkill /IM ssh.exe /F 2> nul || echo.
-                taskkill /IM pageant.exe /F 2> nul || echo.
+                echo Cleaning up resources...
+                docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% 2> nul || echo Backend image cleanup skipped
+                docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% 2> nul || echo Frontend image cleanup skipped
+                if exist docker-compose.yml del /q docker-compose.yml 2> nul || echo Compose file already removed
             """
         }
     }
