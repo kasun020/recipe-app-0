@@ -9,7 +9,7 @@ function Navbar() {
             <div>
               <Link to="/" className="flex items-center py-4 px-2">
                 <span className="font-semibold text-gray-500 text-lg">
-                  Recipe Application
+                  Recipe App
                 </span>
               </Link>
             </div>
