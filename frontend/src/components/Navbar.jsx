@@ -8,7 +8,7 @@ function Navbar() {
           <div className="flex space-x-7">
             <div>
               <Link to="/" className="flex items-center py-4 px-2">
-                <span className="font-semibold text-gray-500 text-lg">
+                <span className="font-bold text-gray-700 text-xl">
                   Recipe App
                 </span>
               </Link>
