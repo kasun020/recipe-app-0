@@ -41,7 +41,7 @@ pipeline {
                     branches: [[name: "*/${GIT_BRANCH}"]],
                     userRemoteConfigs: [[
                         credentialsId: 'github-credentials',
-                        url: 'https://github.com/kasun020/recipe-app.git'
+                        url: 'https://github.com/kasun020/recipe-app-0.git'
                     ]]
                 ])
             }
