@@ -81,37 +81,28 @@ pipeline {
 stage('Setup and Test SSH') {
     steps {
         withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
-            // Use OpenSSH client with proper permissions
+            // Create a temporary directory with proper permissions
             bat """
-                echo Copying key from %SSH_KEY_PATH%
-                copy "%SSH_KEY_PATH%" test-key.pem
+                echo Setting up secure directory for SSH key
+                mkdir ssh_temp 2>nul
                 
-                :: Fix permissions - remove inheritance and grant only current user permissions
-                icacls test-key.pem /inheritance:r
-                icacls test-key.pem /remove:g "BUILTIN\\Users"
-                icacls test-key.pem /remove:g "Everyone"
+                :: Copy the key to the secure location
+                copy "%SSH_KEY_PATH%" ssh_temp\\id_rsa
                 
-                :: Add explicit permission only for Jenkins service account
-                icacls test-key.pem /grant:r "%USERNAME%:(R)"
+                :: Set strict permissions using cacls (older but sometimes more reliable)
+                cacls ssh_temp\\id_rsa /P /E %USERNAME%:R
+                cacls ssh_temp\\id_rsa /P /E SYSTEM:R
                 
-                :: Verify permissions
-                icacls test-key.pem
+                :: Test connection using simpler command
+                echo Testing SSH connection...
+                ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
                 
-                :: Test SSH connection with retry
-                set ATTEMPTS=0
-                :RETRY_SSH
-                ssh -v -o StrictHostKeyChecking=no -o BatchMode=yes -i test-key.pem ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
                 if errorlevel 1 (
-                    set /a ATTEMPTS+=1
-                    if !ATTEMPTS! lss 3 (
-                        echo Retrying SSH connection attempt !ATTEMPTS! of 3...
-                        ping -n 6 127.0.0.1 > nul
-                        goto RETRY_SSH
-                    ) else (
-                        echo SSH connection failed after 3 attempts
-                        exit /b 1
-                    )
+                    echo SSH connection failed with OpenSSH
+                    exit /b 1
                 )
+                
+                echo SSH connection successful!
             """
         }
     }
@@ -138,24 +129,18 @@ stage('Deploy to EC2') {
         - ./Backend/.env
         restart: unless-stopped"""
             
-            // Use OpenSSH with correct permissions
+            // Use the simple SSH approach that worked
             withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
                 bat """
-                    echo Regenerating key for deployment
-                    copy "%SSH_KEY_PATH%" test-key.pem
-                    
-                    :: Fix permissions properly
-                    icacls test-key.pem /inheritance:r
-                    icacls test-key.pem /remove:g "BUILTIN\\Users"
-                    icacls test-key.pem /remove:g "Everyone"
-                    icacls test-key.pem /grant:r "%USERNAME%:(R)"
+                    :: Use the key from the existing directory
+                    echo Using key from ssh_temp directory
                     
                     :: First create directory structure if needed
-                    ssh -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "mkdir -p /home/ubuntu/recipe-app"
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "mkdir -p /home/ubuntu/recipe-app"
                     
                     :: Transfer and execute commands
-                    scp -o StrictHostKeyChecking=no -i test-key.pem docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
-                    ssh -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
+                    scp -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                    ssh -o StrictHostKeyChecking=no -i ssh_temp\\id_rsa ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
                 """
             }
         }
@@ -174,32 +159,36 @@ stage('Deploy to EC2') {
         }
         
         stage('Cleanup') {
-            steps {
-                script {
-                    // Remove temporary files
-                    bat """
-                        docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% 2> nul || echo.
-                        docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% 2> nul || echo.
-                        del /q docker-compose.yml 2> nul
-                    """
-                    
-                    // Kill Pageant process
-                    bat """
-                        taskkill /IM pageant.exe /F 2> nul
-                    """
-                }
-            }
+    steps {
+        script {
+            // Remove temporary files
+            bat """
+                docker rmi %DOCKER_HUB_CREDS_USR%/recipe-backend:%BUILD_NUMBER% 2> nul || echo.
+                docker rmi %DOCKER_HUB_CREDS_USR%/recipe-frontend:%BUILD_NUMBER% 2> nul || echo.
+                del /q docker-compose.yml 2> nul
+                
+                :: Remove SSH directory
+                rd /s /q ssh_temp 2> nul || echo.
+            """
+            
+            // Kill any remaining processes
+            bat """
+                taskkill /IM ssh.exe /F 2> nul || echo.
+                taskkill /IM pageant.exe /F 2> nul || echo.
+            """
         }
+    }
+}
     }
     
     post {
         always {
-       // Clean up credentials
-       bat """
-           docker logout 2> nul
-           del /q key.ppk openssh.key test-key.pem 2> nul
-       """
-    }
+            // Clean up credentials
+            bat """
+                docker logout 2> nul
+                rd /s /q ssh_temp 2> nul || echo.
+            """
+        }
         success {
             slackSend channel: '#deployments', 
                      message: "SUCCESS: Recipe App ${BUILD_NUMBER} deployed to ${EC2_IP}"
