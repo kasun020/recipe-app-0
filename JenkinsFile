@@ -258,8 +258,11 @@ EC2 > Security Groups > [Your EC2 Instance's Security Group] > Edit inbound rule
         always {
             // Clean up credentials
             bat """
-                docker logout 2> nul
-                rd /s /q ssh_temp 2> nul || echo.
+                echo Performing final cleanup...
+                docker logout 2> nul || echo Docker already logged out
+                if exist ssh_temp rd /s /q ssh_temp 2> nul || echo SSH temp directory already removed
+                taskkill /IM ssh.exe /F 2> nul || echo No SSH processes to kill
+                taskkill /IM pageant.exe /F 2> nul || echo No Pageant processes to kill
             """
         }
         success {
