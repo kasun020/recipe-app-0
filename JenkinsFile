@@ -78,7 +78,7 @@ pipeline {
             }
         }
 
-       stage('Setup and Test SSH') {
+stage('Setup and Test SSH') {
     steps {
         withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
             // Simple copy with minimal permissions
@@ -86,44 +86,47 @@ pipeline {
                 echo Copying key from %SSH_KEY_PATH%
                 copy "%SSH_KEY_PATH%" key.ppk
                 
-                :: Test SSH connection with explicit key reference
-                "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -hostkey=* -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
+                :: Test SSH connection (removed invalid -hostkey=* parameter)
+                "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
             """
         }
     }
 }
 
-
-        stage('Deploy to EC2') {
-            steps {
-                script {
-                    // Create compose file
-                    writeFile file: 'docker-compose.yml', text: """version: '3'
-        services:
-        frontend:
-            image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
-            ports:
-            - "80:80"
-            depends_on:
-            - backend
-            restart: unless-stopped
-        backend:
-            image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
-            ports:
-            - "5000:5000"
-            env_file:
-            - ./Backend/.env
-            restart: unless-stopped"""
+stage('Deploy to EC2') {
+    steps {
+        script {
+            // Create compose file
+            writeFile file: 'docker-compose.yml', text: """version: '3'
+    services:
+    frontend:
+        image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
+        ports:
+        - "80:80"
+        depends_on:
+        - backend
+        restart: unless-stopped
+    backend:
+        image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
+        ports:
+        - "5000:5000"
+        env_file:
+        - ./Backend/.env
+        restart: unless-stopped"""
+            
+            // Re-generate the key for this stage
+            withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
+                bat """
+                    echo Regenerating key for deployment
+                    copy "%SSH_KEY_PATH%" key.ppk
                     
-                    // Use the key file in both commands
-                    bat """
-                        "${PUTTY_PATH}\\pscp.exe" -batch -i key.ppk docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
-                        "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -ssh ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
-                    """
-                }
+                    "${PUTTY_PATH}\\pscp.exe" -batch -i key.ppk docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                    "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -ssh ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
+                """
             }
         }
-
+    }
+}
 
         stage('Verify Deployment') {
             steps {
@@ -157,11 +160,11 @@ pipeline {
     
     post {
         always {
-            // Clean up credentials
-            bat """
-                docker logout 2> nul
-                del /q id_rsa.ppk 2> nul
-            """
+           // Clean up credentials
+        bat """
+            docker logout 2> nul
+            del /q key.ppk 2> nul
+        """
         }
         success {
             slackSend channel: '#deployments', 
