@@ -33,21 +33,21 @@ function Hero() {
           {/* Image */}
           <div className="md:w-1/2">
             <div className="rounded-lg overflow-hidden shadow-xl">
-              {/* If you have an image, use this: */}
-              {/* <img 
+              
+              {<img 
                 src="/images/hero-food.jpg" 
                 alt="Delicious food on a table" 
                 className="w-full h-auto"
-              /> */}
+              />}
 
               {/* Placeholder if you don't have an image yet */}
-              <div className="bg-gradient-to-br from-green-300 to-green-500 aspect-video flex items-center justify-center">
+              {/* <div className="bg-gradient-to-br from-green-300 to-green-500 aspect-video flex items-center justify-center">
                 <div className="text-center p-6">
                   <span className="text-white text-xl font-semibold">
                     Your Culinary Journey Starts Here
                   </span>
                 </div>
-              </div>
+              </div> */}
             </div>
           </div>
         </div>
