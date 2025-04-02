@@ -81,23 +81,31 @@ pipeline {
 stage('Setup and Test SSH') {
     steps {
         withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
-            // Use OpenSSH client instead of PuTTY
+            // Use OpenSSH client with proper permissions
             bat """
                 echo Copying key from %SSH_KEY_PATH%
                 copy "%SSH_KEY_PATH%" test-key.pem
                 
-                :: Ensure proper permissions
-                icacls test-key.pem /inheritance:r /grant:r "%USERNAME%:R"
+                :: Fix permissions - remove inheritance and grant only current user permissions
+                icacls test-key.pem /inheritance:r
+                icacls test-key.pem /remove:g "BUILTIN\\Users"
+                icacls test-key.pem /remove:g "Everyone"
+                
+                :: Add explicit permission only for Jenkins service account
+                icacls test-key.pem /grant:r "%USERNAME%:(R)"
+                
+                :: Verify permissions
+                icacls test-key.pem
                 
                 :: Test SSH connection with retry
                 set ATTEMPTS=0
                 :RETRY_SSH
-                ssh -o StrictHostKeyChecking=no -o BatchMode=yes -i test-key.pem ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
+                ssh -v -o StrictHostKeyChecking=no -o BatchMode=yes -i test-key.pem ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
                 if errorlevel 1 (
                     set /a ATTEMPTS+=1
                     if !ATTEMPTS! lss 3 (
                         echo Retrying SSH connection attempt !ATTEMPTS! of 3...
-                        timeout /t 5
+                        ping -n 6 127.0.0.1 > nul
                         goto RETRY_SSH
                     ) else (
                         echo SSH connection failed after 3 attempts
@@ -130,14 +138,20 @@ stage('Deploy to EC2') {
         - ./Backend/.env
         restart: unless-stopped"""
             
-            // Use OpenSSH instead of PuTTY
+            // Use OpenSSH with correct permissions
             withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
                 bat """
                     echo Regenerating key for deployment
                     copy "%SSH_KEY_PATH%" test-key.pem
                     
-                    :: Ensure proper permissions
-                    icacls test-key.pem /inheritance:r /grant:r "%USERNAME%:R"
+                    :: Fix permissions properly
+                    icacls test-key.pem /inheritance:r
+                    icacls test-key.pem /remove:g "BUILTIN\\Users"
+                    icacls test-key.pem /remove:g "Everyone"
+                    icacls test-key.pem /grant:r "%USERNAME%:(R)"
+                    
+                    :: First create directory structure if needed
+                    ssh -o StrictHostKeyChecking=no -i test-key.pem ubuntu@%EC2_IP% "mkdir -p /home/ubuntu/recipe-app"
                     
                     :: Transfer and execute commands
                     scp -o StrictHostKeyChecking=no -i test-key.pem docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
