@@ -78,20 +78,20 @@ pipeline {
             }
         }
 
-        stage('Setup and Test SSH') {
-            steps {
-                withCredentials([file(credentialsId: 'ec2-ssh-key-ppk', variable: 'SSH_KEY_PATH')]) {
-                    // Simple copy with minimal permissions
-                    bat """
-                        echo Copying key from %SSH_KEY_PATH%
-                        copy "%SSH_KEY_PATH%" key.ppk
-                        
-                        :: Test SSH connection with explicit key reference
-                        "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -hostkey=* -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
-                    """
-                }
-            }
+       stage('Setup and Test SSH') {
+    steps {
+        withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key-ppk', keyFileVariable: 'SSH_KEY_PATH')]) {
+            // Simple copy with minimal permissions
+            bat """
+                echo Copying key from %SSH_KEY_PATH%
+                copy "%SSH_KEY_PATH%" key.ppk
+                
+                :: Test SSH connection with explicit key reference
+                "${PUTTY_PATH}\\plink.exe" -batch -i key.ppk -hostkey=* -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
+            """
         }
+    }
+}
 
 
         stage('Deploy to EC2') {
