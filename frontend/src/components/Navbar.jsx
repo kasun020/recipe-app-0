@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom"
+import { Link } from "react-router-dom";
 
 function Navbar() {
   return (
@@ -8,14 +8,22 @@ function Navbar() {
           <div className="flex space-x-7">
             <div>
               <Link to="/" className="flex items-center py-4 px-2">
-                <span className="font-semibold text-gray-500 text-lg">Recipe App</span>
+                <span className="font-semibold text-gray-500 text-lg">
+                  Recipe Application
+                </span>
               </Link>
             </div>
             <div className="hidden md:flex items-center space-x-1">
-              <Link to="/" className="py-4 px-2 text-gray-500 hover:text-gray-900">
+              <Link
+                to="/"
+                className="py-4 px-2 text-gray-500 hover:text-gray-900"
+              >
                 Home
               </Link>
-              <Link to="/create-recipe" className="py-4 px-2 text-gray-500 hover:text-gray-900">
+              <Link
+                to="/create-recipe"
+                className="py-4 px-2 text-gray-500 hover:text-gray-900"
+              >
                 Create Recipe
               </Link>
             </div>
@@ -27,15 +35,17 @@ function Navbar() {
             >
               Log In
             </Link>
-            <Link to="/register" className="py-2 px-2 font-medium text-white bg-green-500 rounded hover:bg-green-400">
+            <Link
+              to="/register"
+              className="py-2 px-2 font-medium text-white bg-green-500 rounded hover:bg-green-400"
+            >
               Sign Up
             </Link>
           </div>
         </div>
       </div>
     </nav>
-  )
+  );
 }
 
-export default Navbar
-
+export default Navbar;
