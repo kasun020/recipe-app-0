@@ -311,12 +311,3 @@ EC2 > Security Groups > [Your EC2 Instance's Security Group] > Edit inbound rule
         }
     }
 }
-
-echo """
-=====================================
-IMPORTANT: If external verification fails, make sure the EC2 security group 
-allows inbound traffic on ports 80 and 5000 from all sources (0.0.0.0/0).
-This can be configured in the AWS Console under:
-EC2 > Security Groups > [Your EC2 Instance's Security Group] > Edit inbound rules
-=====================================
-"""
