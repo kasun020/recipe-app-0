@@ -96,8 +96,8 @@ stage('Setup and Test SSH') {
                 icacls ssh_temp\\id_rsa /remove:g "Everyone"
                 icacls ssh_temp\\id_rsa /remove:g "Authenticated Users"
                 
-                :: Grant only necessary permissions
-                icacls ssh_temp\\id_rsa /grant:r "%USERNAME%:(R)"
+                :: Grant only necessary permissions - use SYSTEM which is the service account for Jenkins
+                icacls ssh_temp\\id_rsa /grant:r "SYSTEM:(R)"
                 
                 :: Verify final permissions
                 icacls ssh_temp\\id_rsa
@@ -116,7 +116,8 @@ stage('Setup and Test SSH') {
                     
                     :: As a fallback, try using PuTTY if SSH fails
                     echo Falling back to PuTTY...
-                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -ssh ubuntu@%EC2_IP% echo "SSH CONNECTION SUCCESSFUL"
+                    :: Use -hostkey parameter to specify the known fingerprint
+                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -hostkey "SHA256:n8bxB+8FwP54pCnsK13FKPyQOa7LrYzewD/uZyjgcWI" -ssh ubuntu@%EC2_IP% "echo SSH CONNECTION SUCCESSFUL"
                     
                     if errorlevel 1 (
                         echo Both SSH and PuTTY connection methods failed
@@ -158,13 +159,13 @@ stage('Deploy to EC2') {
                     echo Using PuTTY tools for deployment
                     
                     :: Create directory on remote server
-                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -ssh ubuntu@%EC2_IP% "mkdir -p /home/ubuntu/recipe-app"
+                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -hostkey "SHA256:n8bxB+8FwP54pCnsK13FKPyQOa7LrYzewD/uZyjgcWI" -ssh ubuntu@%EC2_IP% "mkdir -p /home/ubuntu/recipe-app"
                     
                     :: Transfer docker-compose file
-                    "%PUTTY_PATH%\\pscp.exe" -batch -i "%SSH_KEY_PATH%" docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
+                    "%PUTTY_PATH%\\pscp.exe" -batch -i "%SSH_KEY_PATH%" -hostkey "SHA256:n8bxB+8FwP54pCnsK13FKPyQOa7LrYzewD/uZyjgcWI" docker-compose.yml ubuntu@%EC2_IP%:/home/ubuntu/recipe-app/
                     
                     :: Deploy using docker-compose
-                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -ssh ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
+                    "%PUTTY_PATH%\\plink.exe" -batch -i "%SSH_KEY_PATH%" -hostkey "SHA256:n8bxB+8FwP54pCnsK13FKPyQOa7LrYzewD/uZyjgcWI" -ssh ubuntu@%EC2_IP% "cd /home/ubuntu/recipe-app && docker-compose pull && docker-compose up -d"
                 """
             }
         }
