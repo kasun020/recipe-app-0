@@ -270,37 +270,40 @@ The deployment is considered successful, but external access requires security g
     
     post {
         always {
-            // Clean up credentials safely
-            script {
-                try {
-                    bat """
-                        echo Performing final cleanup...
-                        docker logout 2>nul || echo Docker already logged out
-                    """
-                    // Use a try/catch for each potentially failing operation
+                // Clean up credentials safely
+                script {
                     try {
-                        bat "if exist ssh_temp rd /s /q ssh_temp 2>nul"
+                        bat """
+                            @echo off
+                            echo Performing final cleanup...
+                            docker logout >nul 2>&1 || echo.
+                        """
+                        // Use a try/catch for each potentially failing operation
+                        try {
+                            bat "@echo off && if exist ssh_temp rd /s /q ssh_temp >nul 2>&1"
+                        } catch (Exception e) {
+                            // Silently ignore
+                        }
+                        
+                        // Attempt to kill processes but don't fail if they're not running
+                        try {
+                            bat "@echo off && taskkill /IM ssh.exe /F >nul 2>&1 || echo."
+                        } catch (Exception e) {
+                            // Silently ignore
+                        }
+                        
+                        try {
+                            bat "@echo off && taskkill /IM pageant.exe /F >nul 2>&1 || echo."
+                        } catch (Exception e) {
+                            // Silently ignore
+                        }
+                        
+                        echo "Cleanup completed successfully"
                     } catch (Exception e) {
-                        echo "Failed to remove SSH temp directory: ${e.message}"
+                        echo "Cleanup encountered an error: ${e.message}"
                     }
-                    
-                    // Attempt to kill processes but don't fail if they're not running
-                    try {
-                        bat "taskkill /IM ssh.exe /F 2>nul || echo No SSH processes to kill"
-                    } catch (Exception e) {
-                        echo "No SSH processes to kill"
-                    }
-                    
-                    try {
-                        bat "taskkill /IM pageant.exe /F 2>nul || echo No Pageant processes to kill"
-                    } catch (Exception e) {
-                        echo "No Pageant processes to kill"
-                    }
-                } catch (Exception e) {
-                    echo "Cleanup encountered an error: ${e.message}"
                 }
             }
-        }
         success {
             script {
                 try {
