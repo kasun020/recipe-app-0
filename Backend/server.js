@@ -7,8 +7,19 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
 
-app.use(cors());
+      // Allow requests from any origin in development or from your EC2 domain in production
+      callback(null, true);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true, // Allow cookies if needed for authentication
+  })
+);
 app.use(express.json());
 
 mongoose

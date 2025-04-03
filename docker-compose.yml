@@ -1,22 +1,22 @@
-version: '3'
+version: "3"
 
 services:
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ${DOCKER_HUB_CREDS_USR}/recipe-frontend:latest
     ports:
-      - "3000:80"
+      - "80:80"
     depends_on:
       - backend
-    container_name: recipe-frontend
-
+    restart: unless-stopped
+    networks:
+      - recipe-network
   backend:
-    build:
-      context: ./Backend
-      dockerfile: Dockerfile
+    image: ${DOCKER_HUB_CREDS_USR}/recipe-backend:latest
     ports:
       - "5000:5000"
-    env_file:
-      - ./Backend/.env
-    container_name: recipe-backend
+    restart: unless-stopped
+    networks:
+      - recipe-network
+networks:
+  recipe-network:
+    driver: bridge"""
