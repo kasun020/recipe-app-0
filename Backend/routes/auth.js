@@ -37,17 +37,6 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Get a single recipe by ID
-router.get("/:id", async (req, res) => {
-  try {
-    const recipe = await Recipe.findById(req.params.id);
-    if (!recipe) {
-      return res.status(404).json({ error: "Recipe not found" });
-    }
-    res.json(recipe);
-  } catch (error) {
-    res.status(500).json({ error: "Error fetching recipe" });
-  }
-});
+// Remove the recipe-related route that was here
 
 module.exports = router;

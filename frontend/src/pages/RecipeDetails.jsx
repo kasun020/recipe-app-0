@@ -16,15 +16,15 @@ function RecipeDetails() {
         setIsLoading(true);
         const response = await axios.get(`${API_URL}/recipes/${id}`);
         setRecipe(response.data);
-        setIsLoading(false);
 
-        // Add animation delay for entrance effect
+        // Trigger animation after data is loaded
         setTimeout(() => {
           setIsVisible(true);
         }, 100);
       } catch (err) {
         console.error("Error fetching recipe:", err);
         setError("Could not load recipe details");
+      } finally {
         setIsLoading(false);
       }
     };
@@ -34,7 +34,7 @@ function RecipeDetails() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-green-50 pt-24 flex justify-center">
+      <div className="min-h-screen bg-gradient-to-b from-white to-green-50 pt-24 flex justify-center items-center">
         <div className="w-16 h-16 border-4 border-gray-300 border-t-green-500 rounded-full animate-spin"></div>
       </div>
     );
@@ -69,7 +69,7 @@ function RecipeDetails() {
         }`}
       >
         {/* Recipe Header */}
-        <div className="bg-white rounded-t-xl shadow-md overflow-hidden">
+        <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="h-64 bg-gradient-to-r from-green-300 to-blue-300 relative">
             {recipe.image ? (
               <img
@@ -134,26 +134,6 @@ function RecipeDetails() {
                 </svg>
                 <span className="text-gray-600">
                   Serves {recipe.servings || "4"}
-                </span>
-              </div>
-
-              <div className="flex items-center">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-green-500 mr-2"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
-                  />
-                </svg>
-                <span className="text-gray-600 italic">
-                  "A delicious treat for everyone!"
                 </span>
               </div>
             </div>
@@ -250,6 +230,25 @@ function RecipeDetails() {
       </div>
     </div>
   );
+}
+
+// Add animation for decorative elements
+const recipeDetailsStyles = `
+@keyframes float {
+  0% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-20px) rotate(5deg); }
+  100% { transform: translateY(0px) rotate(0deg); }
+}
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+`;
+
+// Add the styles to the document
+if (typeof document !== "undefined") {
+  const style = document.createElement("style");
+  style.textContent = recipeDetailsStyles;
+  document.head.appendChild(style);
 }
 
 export default RecipeDetails;
