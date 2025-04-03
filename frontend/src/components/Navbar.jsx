@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Check if a route is active
   const isActive = (path) => location.pathname === path;
 
-  // Check authentication status
+  // Check authentication status on mount and when localStorage changes
   useEffect(() => {
     const checkAuth = () => {
       const token = localStorage.getItem("token");
@@ -20,14 +21,24 @@ function Navbar() {
     // Check on mount
     checkAuth();
 
-    // Also check when localStorage changes
+    // Listen for storage events (like when token is added/removed in another tab)
     window.addEventListener("storage", checkAuth);
 
-    // Check when path changes (e.g., after login redirect)
-    checkAuth();
+    // Set up an interval to periodically check auth status (optional, helps with reliability)
+    const authCheckInterval = setInterval(checkAuth, 5000);
 
-    return () => window.removeEventListener("storage", checkAuth);
-  }, [location.pathname]);
+    return () => {
+      window.removeEventListener("storage", checkAuth);
+      clearInterval(authCheckInterval);
+    };
+  }, [location]); // Re-check when location changes (like after login redirect)
+
+  // Handle logout
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setIsLoggedIn(false);
+    navigate("/");
+  };
 
   // Handle scroll effect
   useEffect(() => {
@@ -42,13 +53,6 @@ function Navbar() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-
-  // Handle logout
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    setIsLoggedIn(false);
-    window.location.href = "/";
-  };
 
   return (
     <nav
@@ -90,7 +94,7 @@ function Navbar() {
             </Link>
           </div>
 
-          {/* Auth Buttons - Show based on login state */}
+          {/* Auth Buttons */}
           <div className="hidden md:flex items-center space-x-3">
             {!isLoggedIn ? (
               <>
@@ -110,9 +114,23 @@ function Navbar() {
             ) : (
               <button
                 onClick={handleLogout}
-                className="px-5 py-2.5 font-medium text-white rounded-lg bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5"
+                className="px-5 py-2.5 font-medium text-white rounded-lg bg-red-500 hover:bg-red-600 transition-all duration-200 shadow hover:shadow-lg transform hover:-translate-y-0.5 flex items-center"
               >
-                Sign Out
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 mr-2"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                  />
+                </svg>
+                Logout
               </button>
             )}
           </div>
@@ -217,9 +235,23 @@ function Navbar() {
                     handleLogout();
                     setIsMobileMenuOpen(false);
                   }}
-                  className="w-full text-center px-4 py-2 rounded-md bg-red-500 text-white font-medium hover:bg-red-600"
+                  className="w-full text-center px-4 py-2 rounded-md bg-red-500 text-white font-medium hover:bg-red-600 flex items-center justify-center"
                 >
-                  Sign Out
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5 mr-2"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                    />
+                  </svg>
+                  Logout
                 </button>
               )}
             </div>
