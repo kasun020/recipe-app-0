@@ -90,7 +90,7 @@ function Navbar() {
                 isActive("/create-recipe") ? "bg-green-50 text-green-700" : ""
               }`}
             >
-              Create Recipe
+              Create Recipe for Everyone
             </Link>
           </div>
 
