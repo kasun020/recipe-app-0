@@ -1,13 +1,33 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const location = useLocation();
 
   // Check if a route is active
   const isActive = (path) => location.pathname === path;
+
+  // Check authentication status
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem("token");
+      setIsLoggedIn(!!token);
+    };
+
+    // Check on mount
+    checkAuth();
+
+    // Also check when localStorage changes
+    window.addEventListener("storage", checkAuth);
+
+    // Check when path changes (e.g., after login redirect)
+    checkAuth();
+
+    return () => window.removeEventListener("storage", checkAuth);
+  }, [location.pathname]);
 
   // Handle scroll effect
   useEffect(() => {
@@ -19,14 +39,23 @@ function Navbar() {
       }
     };
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // Handle logout
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setIsLoggedIn(false);
+    window.location.href = "/";
+  };
+
   return (
-    <nav 
+    <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        isScrolled ? "bg-white/95 backdrop-blur-sm shadow-md py-2" : "bg-white/90 py-4"
+        isScrolled
+          ? "bg-white/95 backdrop-blur-sm shadow-md py-2"
+          : "bg-white/90 py-4"
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -46,7 +75,7 @@ function Navbar() {
             <Link
               to="/"
               className={`px-4 py-2 rounded-lg text-gray-600 font-medium transition-all duration-200 hover:text-gray-900 hover:bg-gray-100 ${
-                isActive('/') ? 'bg-green-50 text-green-700' : ''
+                isActive("/") ? "bg-green-50 text-green-700" : ""
               }`}
             >
               Home
@@ -54,27 +83,38 @@ function Navbar() {
             <Link
               to="/create-recipe"
               className={`px-4 py-2 rounded-lg text-gray-600 font-medium transition-all duration-200 hover:text-gray-900 hover:bg-gray-100 ${
-                isActive('/create-recipe') ? 'bg-green-50 text-green-700' : ''
+                isActive("/create-recipe") ? "bg-green-50 text-green-700" : ""
               }`}
             >
               Create Recipe
             </Link>
           </div>
 
-          {/* Auth Buttons */}
+          {/* Auth Buttons - Show based on login state */}
           <div className="hidden md:flex items-center space-x-3">
-            <Link
-              to="/login"
-              className="px-5 py-2.5 font-medium text-gray-700 rounded-lg border border-gray-300 hover:bg-gray-50 transition-all duration-200 hover:shadow"
-            >
-              Sign In
-            </Link>
-            <Link
-              to="/register"
-              className="px-5 py-2.5 font-medium text-white rounded-lg bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5"
-            >
-              Sign Up
-            </Link>
+            {!isLoggedIn ? (
+              <>
+                <Link
+                  to="/login"
+                  className="px-5 py-2.5 font-medium text-gray-700 rounded-lg border border-gray-300 hover:bg-gray-50 transition-all duration-200 hover:shadow"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/register"
+                  className="px-5 py-2.5 font-medium text-white rounded-lg bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5"
+                >
+                  Sign Up
+                </Link>
+              </>
+            ) : (
+              <button
+                onClick={handleLogout}
+                className="px-5 py-2.5 font-medium text-white rounded-lg bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5"
+              >
+                Sign Out
+              </button>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -133,7 +173,9 @@ function Navbar() {
           <Link
             to="/"
             className={`block px-3 py-2 rounded-md text-base font-medium ${
-              isActive('/') ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'
+              isActive("/")
+                ? "bg-green-50 text-green-700"
+                : "text-gray-700 hover:bg-gray-100"
             }`}
             onClick={() => setIsMobileMenuOpen(false)}
           >
@@ -142,7 +184,9 @@ function Navbar() {
           <Link
             to="/create-recipe"
             className={`block px-3 py-2 rounded-md text-base font-medium ${
-              isActive('/create-recipe') ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-100'
+              isActive("/create-recipe")
+                ? "bg-green-50 text-green-700"
+                : "text-gray-700 hover:bg-gray-100"
             }`}
             onClick={() => setIsMobileMenuOpen(false)}
           >
@@ -150,20 +194,34 @@ function Navbar() {
           </Link>
           <div className="pt-4 pb-3 border-t border-gray-300">
             <div className="flex items-center justify-center space-x-3 px-3 py-3">
-              <Link
-                to="/login"
-                className="w-full text-center px-4 py-2 rounded-md text-gray-700 font-medium border border-gray-300 hover:bg-gray-50"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                Sign In
-              </Link>
-              <Link
-                to="/register"
-                className="w-full text-center px-4 py-2 rounded-md bg-green-500 text-white font-medium hover:bg-green-600"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                Sign Up
-              </Link>
+              {!isLoggedIn ? (
+                <>
+                  <Link
+                    to="/login"
+                    className="w-full text-center px-4 py-2 rounded-md text-gray-700 font-medium border border-gray-300 hover:bg-gray-50"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    to="/register"
+                    className="w-full text-center px-4 py-2 rounded-md bg-green-500 text-white font-medium hover:bg-green-600"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    Sign Up
+                  </Link>
+                </>
+              ) : (
+                <button
+                  onClick={() => {
+                    handleLogout();
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full text-center px-4 py-2 rounded-md bg-red-500 text-white font-medium hover:bg-red-600"
+                >
+                  Sign Out
+                </button>
+              )}
             </div>
           </div>
         </div>
