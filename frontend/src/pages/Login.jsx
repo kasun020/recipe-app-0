@@ -36,14 +36,34 @@ function Login() {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center bg-gradient-to-b from-white to-green-50 px-4 py-16">
+    <div className="min-h-screen bg-gradient-to-b from-white to-green-50 px-4 py-16 flex items-center justify-center relative overflow-hidden">
+      {/* Background floating elements (same as Home page) */}
+      <div
+        className="fixed top-20 left-10 text-7xl opacity-10 animate-float"
+        style={{ animationDuration: "15s" }}
+      >
+        🥑
+      </div>
+      <div
+        className="fixed bottom-20 right-10 text-7xl opacity-10 animate-float"
+        style={{ animationDuration: "12s", animationDelay: "2s" }}
+      >
+        🍅
+      </div>
+      <div
+        className="fixed top-1/2 right-20 text-6xl opacity-10 animate-float"
+        style={{ animationDuration: "10s", animationDelay: "1s" }}
+      >
+        🧀
+      </div>
+
       <div
         className={`w-full max-w-md transform transition-all duration-700 ${
           formVisible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
         }`}
       >
         {/* Card container */}
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-green-100">
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-green-100 transform transition-all duration-500 hover:shadow-xl">
           {/* Header with accent color */}
           <div className="bg-gradient-to-r from-green-400 to-green-500 px-6 py-8 text-white">
             <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>
@@ -145,20 +165,6 @@ function Login() {
           <p>Secure login powered by Recipe App</p>
         </div>
       </div>
-
-      {/* Animated decorative elements */}
-      <div
-        className="fixed -bottom-10 -left-10 text-7xl opacity-5 animate-float"
-        style={{ animationDuration: "15s" }}
-      >
-        🍳
-      </div>
-      <div
-        className="fixed top-20 -right-5 text-7xl opacity-5 animate-float"
-        style={{ animationDuration: "12s", animationDelay: "2s" }}
-      >
-        🥕
-      </div>
     </div>
   );
 }
@@ -169,6 +175,9 @@ const loginStyles = `
   0% { transform: translateY(0px) rotate(0deg); }
   50% { transform: translateY(-20px) rotate(5deg); }
   100% { transform: translateY(0px) rotate(0deg); }
+}
+.animate-float {
+  animation: float 6s ease-in-out infinite;
 }
 `;
 
