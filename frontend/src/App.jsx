@@ -3,6 +3,7 @@ import Navbar from "./components/Navbar";
 import CreateRecipe from "./pages/CreateRecipe";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
+import RecipeDetails from "./pages/RecipeDetails"; // Add this import
 import Register from "./pages/Register";
 
 function App() {
@@ -16,7 +17,7 @@ function App() {
             <Route path="/create-recipe" element={<CreateRecipe />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/recipes/:id" element={<RecipeDetails />} />
+            <Route path="/recipe/:id" element={<RecipeDetails />} />{" "}
           </Routes>
         </div>
       </div>
